@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { PlayCircle, StopCircle, User, Clock, MapPin, QrCode, Users, Minus, Plus, Wallet, LogOut, ArrowLeftRight } from 'lucide-react'
+import { PlayCircle, StopCircle, User, Clock, MapPin, QrCode, Users, Minus, Plus, Wallet, LogOut, ArrowLeftRight, Undo2 } from 'lucide-react'
 import { LoginForm } from '@/components/login-form'
+import { RegisterForm } from '@/components/register-form'
 import { translations, type Language } from '@/lib/translations'
 import { CashQRDialog } from '@/components/cash-qr-dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -19,7 +20,15 @@ import {
 import Link from 'next/link'
 import { formatCurrency, formatDateTime, generateTripId } from '@/lib/utils'
 
-type TripStatus = 'inactive' | 'preparing' | 'boarding' | 'active'
+const STATE = {
+  PREP_IDLE: 'PREP_IDLE',
+  PREP_TIMER: 'PREP_TIMER',
+  BOARDING: 'BOARDING',
+  ROUTE_READY: 'ROUTE_READY',
+  IN_ROUTE: 'IN_ROUTE',
+} as const
+
+type TripStatus = typeof STATE[keyof typeof STATE]
 
 interface Seat {
   id: number
@@ -101,11 +110,12 @@ const tripRoutes = {
 
 export default function DriverDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [showRegister, setShowRegister] = useState(false)
   const [language, setLanguage] = useState<Language>('ru')
   const t = translations[language]
   const { toast } = useToast()
 
-  const [tripStatus, setTripStatus] = useState<TripStatus>('inactive')
+  const [tripStatus, setTripStatus] = useState<TripStatus>(STATE.PREP_IDLE)
   const [tripId, setTripId] = useState<string>('')
   const [selectedTrip, setSelectedTrip] = useState('')
   const [isDirectionReversed, setIsDirectionReversed] = useState(false)
@@ -159,7 +169,7 @@ export default function DriverDashboard() {
   }, [])
 
   useEffect(() => {
-    if (tripStatus === 'preparing') {
+    if (tripStatus === STATE.PREP_TIMER) {
       const interval = setInterval(() => {
         setPrepareTimer(prev => prev - 1)
       }, 1000)
@@ -175,37 +185,68 @@ export default function DriverDashboard() {
     setLanguage(languages[nextIndex])
   }
 
-  const handleTripButton = () => {
-    if (tripStatus === 'inactive') {
-      const newTripId = generateTripId()
-      setTripId(newTripId)
-      setTripStatus('preparing')
-      setPrepareTimer(600) // Reset to 10:00
-    } else if (tripStatus === 'preparing') {
-      setTripStatus('boarding')
-    } else if (tripStatus === 'boarding') {
-      setTripStatus('active')
-    } else {
-      setTripStatus('inactive')
-      setTripId('')
-      setIsDirectionReversed(false)
-      setPrepareTimer(600)
+  const clickStartPrep = () => {
+    if (tripStatus !== STATE.PREP_IDLE) {
+      console.error('[v0] Illegal transition: clickStartPrep from', tripStatus)
+      return
     }
+    const newTripId = generateTripId()
+    setTripId(newTripId)
+    setTripStatus(STATE.PREP_TIMER)
+    setPrepareTimer(600)
+  }
+
+  const clickStartBoarding = () => {
+    if (tripStatus !== STATE.PREP_TIMER) {
+      console.error('[v0] Illegal transition: clickStartBoarding from', tripStatus)
+      return
+    }
+    setTripStatus(STATE.BOARDING)
+  }
+
+  const clickReadyForRoute = () => {
+    if (tripStatus !== STATE.BOARDING) {
+      console.error('[v0] Illegal transition: clickReadyForRoute from', tripStatus)
+      return
+    }
+    setTripStatus(STATE.ROUTE_READY)
+  }
+
+  const clickStartRoute = () => {
+    if (tripStatus !== STATE.ROUTE_READY) {
+      console.error('[v0] Illegal transition: clickStartRoute from', tripStatus)
+      return
+    }
+    setTripStatus(STATE.IN_ROUTE)
+  }
+
+  const clickFinish = () => {
+    if (tripStatus !== STATE.IN_ROUTE) {
+      console.error('[v0] Illegal transition: clickFinish from', tripStatus)
+      return
+    }
+    // Cleanup
+    setPrepareTimer(600)
+    setTripId('')
+    setIsDirectionReversed(false)
+    setTripStatus(STATE.PREP_IDLE)
   }
 
   const getTripButtonText = () => {
-    if (tripStatus === 'inactive') return t.prepareTrip
-    if (tripStatus === 'preparing') {
-      return `${t.prepareTrip}  ${formatTimer(prepareTimer)}`
+    if (tripStatus === STATE.PREP_IDLE) return t.prepareTrip // "Подготовка рейса"
+    if (tripStatus === STATE.PREP_TIMER) {
+      return `${t.prepareTrip}  ${formatTimer(prepareTimer)}` // "Подготовка рейса 10:00"
     }
-    if (tripStatus === 'boarding') return t.startTrip
-    return t.endTrip
+    if (tripStatus === STATE.BOARDING) return t.startBoarding // "Начать посадку"
+    if (tripStatus === STATE.ROUTE_READY) return t.startTrip // "Начать рейс"
+    return '' // IN_ROUTE shows separate finish button
   }
 
   const getTripStatusEmoji = () => {
-    if (tripStatus === 'active') return '🚌'
-    if (tripStatus === 'boarding') return '👥'
-    if (tripStatus === 'preparing') return '⏱️'
+    if (tripStatus === STATE.IN_ROUTE) return '🚌'
+    if (tripStatus === STATE.ROUTE_READY) return '🚦'
+    if (tripStatus === STATE.BOARDING) return '👥'
+    if (tripStatus === STATE.PREP_TIMER) return '⏱️'
     return '⏸️'
   }
 
@@ -218,19 +259,29 @@ export default function DriverDashboard() {
     return isNegative ? `-${timeStr}` : timeStr
   }
 
+  const handleTripButton = () => {
+    if (tripStatus === STATE.PREP_IDLE) {
+      clickStartPrep()
+    } else if (tripStatus === STATE.PREP_TIMER) {
+      clickStartBoarding()
+    } else if (tripStatus === STATE.BOARDING) {
+      clickReadyForRoute()
+    } else if (tripStatus === STATE.ROUTE_READY) {
+      clickStartRoute()
+    }
+  }
+
   const handleAcceptBooking = (bookingId: number) => {
     const booking = bookings.find(b => b.id === bookingId)
     if (!booking) return
 
     if (booking.accepted && !booking.showQRButtons) {
-      // Open QR scanner
       const mockAmount = booking.amount
       setCurrentCashAmount(mockAmount)
       setTempBookingId(bookingId)
       setScanningForQueue(false)
       setShowCashQRDialog(true)
     } else {
-      // First time accepting - mark as accepted
       setBookings(bookings.map(b => 
         b.id === bookingId ? { ...b, accepted: true, qrError: undefined } : b
       ))
@@ -310,7 +361,31 @@ export default function DriverDashboard() {
     setShowCashQRDialog(true)
   }
 
-  // Handle QR scan validation error
+  const handleAcceptQueueQR = (passengerId: number) => {
+    const passenger = queuePassengers.find(p => p.id === passengerId)
+    if (!passenger) return
+
+    setQueuePassengers(queuePassengers.filter(p => p.id !== passengerId))
+    setQrScannedData(null)
+
+    toast({
+      title: language === 'ru' ? 'Пассажир принят' : 'Passenger accepted',
+      description: `${passenger.name}`,
+    })
+  }
+
+  const handleRejectQueueQR = (passengerId: number) => {
+    setQueuePassengers(queuePassengers.map(p => 
+      p.id === passengerId ? { ...p, scanned: false } : p
+    ))
+    setQrScannedData(null)
+
+    toast({
+      title: language === 'ru' ? 'Отклонено' : 'Rejected',
+      variant: 'destructive'
+    })
+  }
+
   const handleQRScanError = () => {
     toast({
       title: t.scanError,
@@ -320,12 +395,10 @@ export default function DriverDashboard() {
   }
 
   const handleConfirmQR = () => {
-    // Modal auto-closes and this gets called on success
     if (tempBookingId !== null && tempBookingId !== undefined) {
       const booking = bookings.find(b => b.id === tempBookingId)
       if (!booking) return
 
-      // Simulate QR code validation
       const isValidQR = Math.random() > 0.3
       if (!isValidQR) {
         handleQRScanError()
@@ -398,7 +471,7 @@ export default function DriverDashboard() {
   const handleLogout = () => {
     localStorage.removeItem('driverAuthenticated')
     setIsAuthenticated(false)
-    setTripStatus('inactive')
+    setTripStatus(STATE.PREP_IDLE)
     setTripId('')
   }
 
@@ -421,20 +494,31 @@ export default function DriverDashboard() {
   }, [seats])
 
   if (!isAuthenticated) {
+    if (showRegister) {
+      return <RegisterForm 
+        onRegister={() => {
+          setShowRegister(false)
+        }} 
+        onBackToLogin={() => setShowRegister(false)}
+        language={language}
+      />
+    }
+    
     return <LoginForm 
       onLogin={() => {
         setIsAuthenticated(true)
         localStorage.setItem('driverAuthenticated', 'true')
       }} 
+      onRegister={() => setShowRegister(true)}
       language={language}
       onLanguageChange={cycleLanguage}
     />
   }
 
   const occupiedCount = manualOccupied
-  const acceptedBookingsCount = bookings.filter(b => b.accepted).length
+  const acceptedBookingsCount = bookings.filter(b => b.accepted).reduce((sum, b) => sum + (b.count || 1), 0)
   const freeCount = 6 - occupiedCount - acceptedBookingsCount
-  const pendingBookingsCount = bookings.filter(b => !b.accepted).length
+  const pendingBookingsCount = bookings.filter(b => !b.accepted).reduce((sum, b) => sum + (b.count || 1), 0)
 
   const getRouteDisplayName = () => {
     if (!selectedTrip) return t.selectTrip
@@ -444,6 +528,16 @@ export default function DriverDashboard() {
     }
     return `${route.start} → ${route.end}`
   }
+
+  const renderPassengerIcons = (count: number) => {
+    const iconCount = Math.min(count, 3)
+    return Array(iconCount).fill(0).map((_, i) => (
+      <User key={i} className="h-4 w-4" />
+    ))
+  }
+
+  const isRouteDropdownDisabled = tripStatus !== STATE.PREP_IDLE
+  const showToggleDirection = tripStatus === STATE.PREP_IDLE && selectedTrip
 
   return (
     <div className="min-h-screen bg-background pb-6">
@@ -456,11 +550,11 @@ export default function DriverDashboard() {
                 setSelectedTrip(value)
                 setIsDirectionReversed(false)
               }}
-              disabled={tripStatus !== 'inactive'}
+              disabled={isRouteDropdownDisabled}
             >
               <SelectTrigger 
-                className={`${tripStatus !== 'inactive' || (selectedTrip && tripStatus === 'inactive') ? "w-auto min-w-40 max-w-full" : "w-auto min-w-48 max-w-full"} h-auto min-h-10 ${
-                  tripStatus !== 'inactive' ? 'opacity-50 cursor-not-allowed' : ''
+                className={`${isRouteDropdownDisabled || (selectedTrip && tripStatus === STATE.PREP_IDLE) ? "w-auto min-w-40 max-w-full" : "w-auto min-w-48 max-w-full"} h-auto min-h-10 ${
+                  isRouteDropdownDisabled ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 <SelectValue placeholder={t.selectTrip}>
@@ -482,7 +576,7 @@ export default function DriverDashboard() {
               </SelectContent>
             </Select>
             
-            {tripStatus === 'inactive' && selectedTrip && (
+            {showToggleDirection && (
               <Button
                 variant="outline"
                 size="icon"
@@ -497,7 +591,7 @@ export default function DriverDashboard() {
           
           <div className="flex items-center gap-2">
             <Badge 
-              variant={tripStatus !== 'inactive' ? "default" : "secondary"}
+              variant={tripStatus !== STATE.PREP_IDLE ? "default" : "secondary"}
               className="text-2xl px-3 py-1"
             >
               {getTripStatusEmoji()}
@@ -530,17 +624,29 @@ export default function DriverDashboard() {
           </div>
         )}
 
+        {tripStatus !== STATE.IN_ROUTE && (
+          <Button
+            onClick={handleTripButton}
+            size="lg"
+            className="w-full h-14 text-lg font-semibold"
+            variant="default"
+          >
+            {tripStatus === STATE.PREP_IDLE && <PlayCircle className="mr-2 h-6 w-6" />}
+            {getTripButtonText()}
+          </Button>
+        )}
 
-        <Button
-          onClick={handleTripButton}
-          size="lg"
-          className="w-full h-14 text-lg font-semibold"
-          variant={tripStatus === 'active' ? "destructive" : "default"}
-        >
-          {tripStatus === 'inactive' && <PlayCircle className="mr-2 h-6 w-6" />}
-          {tripStatus === 'active' && <StopCircle className="mr-2 h-6 w-6" />}
-          {getTripButtonText()}
-        </Button>
+        {tripStatus === STATE.IN_ROUTE && (
+          <Button
+            onClick={clickFinish}
+            size="lg"
+            className="w-full h-14 text-lg font-semibold"
+            variant="destructive"
+          >
+            <StopCircle className="mr-2 h-6 w-6" />
+            {t.finishTrip}
+          </Button>
+        )}
       </div>
 
       <div className="px-4 pt-6 space-y-6">
@@ -609,9 +715,11 @@ export default function DriverDashboard() {
                     : 'bg-secondary border-border'
                 }`}
               >
-                <User className="h-6 w-6 mb-1" />
+                <div className="flex items-center gap-0.5 mb-1">
+                  {renderPassengerIcons(passenger.count)}
+                </div>
                 <span className="text-xs font-bold">
-                  {passenger.queuePosition} • {passenger.count} {t.bookings}
+                  {passenger.queuePosition} • {passenger.count}
                 </span>
               </div>
             ))}
@@ -624,53 +732,45 @@ export default function DriverDashboard() {
                     : 'bg-secondary border-border'
                 }`}
               >
-                <User className="h-6 w-6 mb-1" />
+                <div className="flex items-center gap-0.5 mb-1">
+                  {renderPassengerIcons(queuePassengers[4].count)}
+                </div>
                 <span className="text-xs font-bold">
-                  {queuePassengers[4].queuePosition} • {queuePassengers[4].count} {t.bookings}
+                  {queuePassengers[4].queuePosition} • {queuePassengers[4].count}
                 </span>
               </div>
             )}
           </div>
 
           {qrScannedData && (
-            <Card className="p-3 mb-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t.paymentAmount}:</span>
-                  <span className="font-bold text-green-600 dark:text-green-400">
-                    {formatCurrency(qrScannedData.amount)} RUB
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t.recipientInfo}:</span>
-                  <span className="font-semibold text-xs">{qrScannedData.recipient}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t.qrCreatedAt}:</span>
-                  <span className="font-semibold text-xs">{qrScannedData.createdAt}</span>
-                </div>
-              </div>
-            </Card>
+            <div className="flex gap-2 mb-4">
+              <Button
+                onClick={() => handleAcceptQueueQR(qrScannedData.scannedPassengerId!)}
+                className="flex-1 h-12"
+                variant="default"
+              >
+                {t.accept}
+              </Button>
+              <Button
+                onClick={() => handleRejectQueueQR(qrScannedData.scannedPassengerId!)}
+                className="flex-1 h-12"
+                variant="destructive"
+              >
+                {t.reject}
+              </Button>
+            </div>
           )}
 
-          <Button
-            onClick={handleScanQueueQR}
-            className="w-full h-12"
-            variant="default"
-          >
-            <QrCode className="mr-2 h-5 w-5" />
-            {t.scanQR}
-          </Button>
-          
-          <p className="text-xs text-muted-foreground text-center mt-3 leading-relaxed">
-            {language === 'ru' 
-              ? 'Первый в очереди садится сразу, остальным нужно подтверждение' 
-              : language === 'fr'
-              ? 'Le premier monte directement, les autres nécessitent confirmation'
-              : language === 'ar'
-              ? 'الأول يصعد مباشرة، الآخرون يحتاجون تأكيد'
-              : 'First boards directly, others need confirmation'}
-          </p>
+          {!qrScannedData && (
+            <Button
+              onClick={handleScanQueueQR}
+              className="w-full h-12"
+              variant="default"
+            >
+              <QrCode className="mr-2 h-5 w-5" />
+              {t.scanQR}
+            </Button>
+          )}
         </Card>
 
         <Card className="p-4 border-2 border-border">
@@ -716,24 +816,6 @@ export default function DriverDashboard() {
                                 </div>
                               )}
 
-                              {booking.qrData && (
-                                <Card className="p-2 mb-2 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
-                                  <div className="space-y-1 text-xs">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-muted-foreground">{t.paymentAmount}:</span>
-                                      <span className="font-bold text-green-600">{formatCurrency(booking.qrData.sum)} RUB</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-muted-foreground">{t.recipientInfo}:</span>
-                                      <span className="font-semibold">{booking.qrData.recipient}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-muted-foreground">{t.qrCreatedAt}:</span>
-                                      <span className="font-semibold">{booking.qrData.created_at}</span>
-                                    </div>
-                                  </div>
-                                </Card>
-                              )}
 
                               {booking.showQRButtons ? (
                                 <div className="flex gap-2">
@@ -755,11 +837,11 @@ export default function DriverDashboard() {
                                   </Button>
                                   <Button
                                     onClick={() => handleRevertBookingQR(booking.id)}
-                                    className="flex-1 h-9 text-sm font-semibold"
+                                    className="h-9 w-9 text-sm font-semibold"
                                     variant="outline"
-                                    size="sm"
+                                    size="icon"
                                   >
-                                    {t.revert}
+                                    <Undo2 className="h-4 w-4" />
                                   </Button>
                                 </div>
                               ) : (

@@ -12,11 +12,12 @@ import { translations } from '@/lib/translations'
 
 interface LoginFormProps {
   onLogin: () => void
+  onRegister: () => void
   language: Language
   onLanguageChange: () => void
 }
 
-export function LoginForm({ onLogin, language, onLanguageChange }: LoginFormProps) {
+export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const t = translations[language]
@@ -89,6 +90,17 @@ export function LoginForm({ onLogin, language, onLanguageChange }: LoginFormProp
             {t.signIn}
           </Button>
         </form>
+
+        <div className="mt-4 text-center">
+          <Button
+            type="button"
+            variant="link"
+            onClick={onRegister}
+            className="text-sm"
+          >
+            {language === 'ru' ? 'Нет аккаунта? Зарегистрироваться' : language === 'fr' ? 'Pas de compte ? S\'inscrire' : language === 'ar' ? 'لا يوجد حساب؟ سجل' : 'No account? Register'}
+          </Button>
+        </div>
 
         <div className="mt-6 p-4 bg-muted rounded-lg">
           <div className="flex items-center justify-between mb-2">

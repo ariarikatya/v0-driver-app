@@ -28,11 +28,17 @@ interface Transaction {
   expanded?: boolean
 }
 
+type PeriodFilter = 'today' | 'yesterday' | 'week' | 'month'
+type PaymentFilter = 'qr' | 'cash'
+
 export default function BalancePage() {
   const [language, setLanguage] = useState<Language>('ru')
   const t = translations[language]
   const { toast } = useToast()
   const router = useRouter()
+
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('today')
+  const [paymentFilters, setPaymentFilters] = useState<PaymentFilter[]>(['qr', 'cash'])
 
   useEffect(() => {
     const savedAuthState = localStorage.getItem('driverAuthenticated')
@@ -109,6 +115,24 @@ export default function BalancePage() {
       t.id === id ? { ...t, expanded: !t.expanded } : t
     ))
   }
+
+  const togglePaymentFilter = (filter: PaymentFilter) => {
+    if (paymentFilters.includes(filter)) {
+      setPaymentFilters(paymentFilters.filter(f => f !== filter))
+    } else {
+      setPaymentFilters([...paymentFilters, filter])
+    }
+  }
+
+  const filteredTransactions = transactions.filter(t => {
+    // Period filter logic (mock - for demo just show all)
+    const matchesPeriod = true
+    
+    // Payment method filter
+    const matchesPayment = paymentFilters.length === 0 || paymentFilters.includes(t.paymentMethod)
+    
+    return matchesPeriod && matchesPayment
+  })
 
   const [expandedSettlement, setExpandedSettlement] = useState<number | null>(null)
   const [showCreateOperationDialog, setShowCreateOperationDialog] = useState(false)
@@ -187,13 +211,58 @@ export default function BalancePage() {
         </Card>
 
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-foreground">{t.transactionHistory}</h2>
-            <Badge variant="secondary">{transactions.length} {t.operations}</Badge>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="flex gap-2">
+              <Button
+                variant={periodFilter === 'today' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPeriodFilter('today')}
+              >
+                {t.today}
+              </Button>
+              <Button
+                variant={periodFilter === 'yesterday' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPeriodFilter('yesterday')}
+              >
+                {t.yesterday}
+              </Button>
+              <Button
+                variant={periodFilter === 'week' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPeriodFilter('week')}
+              >
+                {t.week}
+              </Button>
+              <Button
+                variant={periodFilter === 'month' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setPeriodFilter('month')}
+              >
+                {t.month}
+              </Button>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                variant={paymentFilters.includes('qr') ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => togglePaymentFilter('qr')}
+              >
+                {t.qr}
+              </Button>
+              <Button
+                variant={paymentFilters.includes('cash') ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => togglePaymentFilter('cash')}
+              >
+                {language === 'ru' ? 'ЛС' : 'LS'}
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-3">
-            {transactions.map((transaction) => (
+            {filteredTransactions.map((transaction) => (
               <Card 
                 key={transaction.id} 
                 className="p-4 cursor-pointer hover:bg-accent/5 transition-colors"

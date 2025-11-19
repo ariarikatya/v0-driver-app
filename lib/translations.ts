@@ -7,6 +7,19 @@ export const translations = {
     signIn: 'Войти',
     testAccount: 'Тестовая учётная запись',
     logout: 'Выйти',
+    registration: 'Регистрация',
+    register: 'Зарегистрироваться',
+    createAccount: 'Создайте учётную запись водителя',
+    city: 'Город',
+    selectCity: 'Выберите город',
+    carNumber: 'Номер авто',
+    documents: 'Документы',
+    today: 'Сегодня',
+    yesterday: 'Вчера',
+    week: 'Неделя',
+    month: 'Месяц',
+    filterByPeriod: 'Фильтр по периоду',
+    filterByType: 'Фильтр по типу',
     // Header
     tripNumber: 'Маршрут №',
     tripId: 'ID рейса',
@@ -18,8 +31,9 @@ export const translations = {
     startBoarding: 'Начать посадку',
     startTrip: 'Начать рейс',
     endTrip: 'Завершить рейс',
+    finishTrip: 'Завершить рейс', // Added finishTrip translation
     selectTrip: 'Выберите рейс',
-    prepareTrip: 'Подготовка рейса', // New translation for trip preparation state
+    prepareTrip: 'Подготовка рейса',
     // Route
     routeStops: 'Остановки с бронями',
     stops: 'Остановки',
@@ -29,8 +43,8 @@ export const translations = {
     stationEnd: 'Вокзал',
     available: 'свободно',
     dropOff: 'Высадка',
-    queue: 'Электронная очередь', // New translation
-    bookings: 'броней', // New translation
+    queue: 'Электронная очередь',
+    bookings: 'броней',
     // Seats
     occupancy: 'Занятость мест',
     seats: 'Места',
@@ -51,14 +65,14 @@ export const translations = {
     acceptBooking: 'Принять бронь',
     scanBookingQR: 'Сканировать QR',
     noSeatsAvailable: 'Нет свободных мест на маршруте',
-    accept: 'Принять', // New translation for QR modal buttons
-    reject: 'Отказать', // New translation for QR modal buttons
-    revert: 'Вернуть', // New translation for QR modal buttons
-    scanQR: 'Сканировать QR', // Added scanQR translation
+    accept: 'Принять',
+    reject: 'Отказать',
+    revert: 'Вернуть',
+    scanQR: 'Сканировать QR',
     // QR data fields
-    paymentAmount: 'Сумма', // New translation
-    recipientInfo: 'Кому зачислить', // New translation
-    qrCreatedAt: 'QR создан', // New translation
+    paymentAmount: 'Сумма',
+    recipientInfo: 'Кому зачислить',
+    qrCreatedAt: 'QR создан',
     // Transactions
     transactionSuccess: 'Операция выполнена успешно',
     depositAmount: 'Сумма пополнения',
@@ -66,21 +80,21 @@ export const translations = {
     enterAmount: 'Введите сумму',
     confirm: 'Подтвердить',
     cancel: 'Отмена',
-    currentTime: 'Время', // New translation
-    driverBalance: 'Баланс водителя', // New translation
-    reserved: 'Резерв', // New translation
-    available: 'Доступно', // New translation
-    dailyIncome: 'Доход за день', // New translation
-    weeklyIncome: 'Доход за неделю', // New translation
-    transactionHistory: 'История операций', // New translation
-    operations: 'операций', // New translation
-    booking: 'Бронирование', // New translation
-    client: 'Клиент', // New translation
-    qr: 'QR', // New translation
-    settlement: 'Взаиморасчёт', // New translation
-    createOperation: 'Создать операцию', // New translation
-    scanError: 'Ошибка сканирования', // New translation
-    invalidQR: 'Невалидный или просроченный QR-код', // New translation
+    currentTime: 'Время',
+    driverBalance: 'Баланс водителя',
+    reserved: 'Резерв',
+    available: 'Доступно',
+    dailyIncome: 'Доход за день',
+    weeklyIncome: 'Доход за неделю',
+    transactionHistory: 'История операций',
+    operations: 'операций',
+    booking: 'Бронирование',
+    client: 'Клиент',
+    qr: 'QR',
+    settlement: 'Взаиморасчёт',
+    createOperation: 'Создать операцию',
+    scanError: 'Ошибка сканирования',
+    invalidQR: 'Невалидный или просроченный QR-код',
   },
   en: {
     // Auth
@@ -90,6 +104,19 @@ export const translations = {
     signIn: 'Sign In',
     testAccount: 'Test Account',
     logout: 'Logout',
+    registration: 'Registration',
+    register: 'Register',
+    createAccount: 'Create driver account',
+    city: 'City',
+    selectCity: 'Select city',
+    carNumber: 'Car Number',
+    documents: 'Documents',
+    today: 'Today',
+    yesterday: 'Yesterday',
+    week: 'Week',
+    month: 'Month',
+    filterByPeriod: 'Filter by period',
+    filterByType: 'Filter by type',
     // Header
     tripNumber: 'Route #',
     tripId: 'Trip ID',
@@ -101,8 +128,9 @@ export const translations = {
     startBoarding: 'Start Boarding',
     startTrip: 'Start Trip',
     endTrip: 'End Trip',
+    finishTrip: 'Finish Trip', // Added finishTrip translation
     selectTrip: 'Select Trip',
-    prepareTrip: 'Prepare Trip', // New translation for trip preparation state
+    prepareTrip: 'Prepare Trip',
     // Route
     routeStops: 'Stops with Bookings',
     stops: 'Stops',
@@ -112,8 +140,8 @@ export const translations = {
     stationEnd: 'Station',
     available: 'available',
     dropOff: 'Drop-off',
-    queue: 'Electronic Queue', // New translation
-    bookings: 'bookings', // New translation
+    queue: 'Electronic Queue',
+    bookings: 'bookings',
     // Seats
     occupancy: 'Seat Occupancy',
     seats: 'Seats',
@@ -134,14 +162,14 @@ export const translations = {
     acceptBooking: 'Accept Booking',
     scanBookingQR: 'Scan QR',
     noSeatsAvailable: 'No seats available on route',
-    accept: 'Accept', // New translation for QR modal buttons
-    reject: 'Reject', // New translation for QR modal buttons
-    revert: 'Revert', // New translation for QR modal buttons
-    scanQR: 'Scan QR', // Added scanQR translation
+    accept: 'Accept',
+    reject: 'Reject',
+    revert: 'Revert',
+    scanQR: 'Scan QR',
     // QR data fields
-    paymentAmount: 'Amount', // New translation
-    recipientInfo: 'Recipient', // New translation
-    qrCreatedAt: 'QR created', // New translation
+    paymentAmount: 'Amount',
+    recipientInfo: 'Recipient',
+    qrCreatedAt: 'QR created',
     // Transactions
     transactionSuccess: 'Transaction successful',
     depositAmount: 'Deposit Amount',
@@ -149,21 +177,21 @@ export const translations = {
     enterAmount: 'Enter amount',
     confirm: 'Confirm',
     cancel: 'Cancel',
-    currentTime: 'Time', // New translation
-    driverBalance: 'Driver Balance', // New translation
-    reserved: 'Reserved', // New translation
-    available: 'Available', // New translation
-    dailyIncome: 'Daily Income', // New translation
-    weeklyIncome: 'Weekly Income', // New translation
-    transactionHistory: 'Transaction History', // New translation
-    operations: 'operations', // New translation
-    booking: 'Booking', // New translation
-    client: 'Client', // New translation
-    qr: 'QR', // New translation
-    settlement: 'Settlement', // New translation
-    createOperation: 'Create Operation', // New translation
-    scanError: 'Scan Error', // New translation
-    invalidQR: 'Invalid or expired QR code', // New translation
+    currentTime: 'Time',
+    driverBalance: 'Driver Balance',
+    reserved: 'Reserved',
+    available: 'Available',
+    dailyIncome: 'Daily Income',
+    weeklyIncome: 'Weekly Income',
+    transactionHistory: 'Transaction History',
+    operations: 'operations',
+    booking: 'Booking',
+    client: 'Client',
+    qr: 'QR',
+    settlement: 'Settlement',
+    createOperation: 'Create Operation',
+    scanError: 'Scan Error',
+    invalidQR: 'Invalid or expired QR code',
   },
   fr: {
     // Auth
@@ -173,6 +201,19 @@ export const translations = {
     signIn: 'Se connecter',
     testAccount: 'Compte de test',
     logout: 'Déconnexion',
+    registration: 'Inscription',
+    register: 'S\'inscrire',
+    createAccount: 'Créer un compte chauffeur',
+    city: 'Ville',
+    selectCity: 'Sélectionner une ville',
+    carNumber: 'Numéro de voiture',
+    documents: 'Documents',
+    today: 'Aujourd\'hui',
+    yesterday: 'Hier',
+    week: 'Semaine',
+    month: 'Mois',
+    filterByPeriod: 'Filtrer par période',
+    filterByType: 'Filtrer par type',
     // Header
     tripNumber: 'Itinéraire №',
     tripId: 'ID du trajet',
@@ -184,8 +225,9 @@ export const translations = {
     startBoarding: 'Commencer l\'embarquement',
     startTrip: 'Commencer le trajet',
     endTrip: 'Terminer le trajet',
+    finishTrip: 'Terminer le trajet', // Added finishTrip translation
     selectTrip: 'Sélectionner un trajet',
-    prepareTrip: 'Préparer le trajet', // New translation for trip preparation state
+    prepareTrip: 'Préparer le trajet',
     // Route
     routeStops: 'Arrêts avec réservations',
     stops: 'Arrêts',
@@ -195,8 +237,8 @@ export const translations = {
     stationEnd: 'Gare',
     available: 'disponible',
     dropOff: 'Débarquement',
-    queue: 'File électronique', // New translation
-    bookings: 'réservations', // New translation
+    queue: 'File électronique',
+    bookings: 'réservations',
     // Seats
     occupancy: 'Occupation des sièges',
     seats: 'Places',
@@ -217,14 +259,14 @@ export const translations = {
     acceptBooking: 'Accepter la réservation',
     scanBookingQR: 'Scanner QR',
     noSeatsAvailable: 'Pas de sièges disponibles',
-    accept: 'Accepter', // New translation for QR modal buttons
-    reject: 'Refuser', // New translation for QR modal buttons
-    revert: 'Annuler', // New translation for QR modal buttons
-    scanQR: 'Scanner QR', // Added scanQR translation
+    accept: 'Accepter',
+    reject: 'Refuser',
+    revert: 'Annuler',
+    scanQR: 'Scanner QR',
     // QR data fields
-    paymentAmount: 'Montant', // New translation
-    recipientInfo: 'Destinataire', // New translation
-    qrCreatedAt: 'QR créé', // New translation
+    paymentAmount: 'Montant',
+    recipientInfo: 'Destinataire',
+    qrCreatedAt: 'QR créé',
     // Transactions
     transactionSuccess: 'Transaction réussie',
     depositAmount: 'Montant du dépôt',
@@ -232,21 +274,21 @@ export const translations = {
     enterAmount: 'Entrer le montant',
     confirm: 'Confirmer',
     cancel: 'Annuler',
-    currentTime: 'Temps', // New translation
-    driverBalance: 'Solde du chauffeur', // New translation
-    reserved: 'Réservé', // New translation
-    available: 'Disponible', // New translation
-    dailyIncome: 'Revenu quotidien', // New translation
-    weeklyIncome: 'Revenu hebdomadaire', // New translation
-    transactionHistory: 'Historique des transactions', // New translation
-    operations: 'opérations', // New translation
-    booking: 'Réservation', // New translation
-    client: 'Client', // New translation
-    qr: 'QR', // New translation
-    settlement: 'Règlement', // New translation
-    createOperation: 'Créer une opération', // New translation
-    scanError: 'Erreur de scan', // New translation
-    invalidQR: 'QR invalide ou expiré', // New translation
+    currentTime: 'Temps',
+    driverBalance: 'Solde du chauffeur',
+    reserved: 'Réservé',
+    available: 'Disponible',
+    dailyIncome: 'Revenu quotidien',
+    weeklyIncome: 'Revenu hebdomadaire',
+    transactionHistory: 'Historique des transactions',
+    operations: 'opérations',
+    booking: 'Réservation',
+    client: 'Client',
+    qr: 'QR',
+    settlement: 'Règlement',
+    createOperation: 'Créer une opération',
+    scanError: 'Erreur de scan',
+    invalidQR: 'QR invalide ou expiré',
   },
   ar: {
     // Auth
@@ -256,6 +298,19 @@ export const translations = {
     signIn: 'تسجيل الدخول',
     testAccount: 'حساب تجريبي',
     logout: 'تسجيل الخروج',
+    registration: 'التسجيل',
+    register: 'تسجيل',
+    createAccount: 'إنشاء حساب سائق',
+    city: 'المدينة',
+    selectCity: 'اختر المدينة',
+    carNumber: 'رقم السيارة',
+    documents: 'المستندات',
+    today: 'اليوم',
+    yesterday: 'أمس',
+    week: 'أسبوع',
+    month: 'شهر',
+    filterByPeriod: 'تصفية حسب الفترة',
+    filterByType: 'تصفية حسب النوع',
     // Header
     tripNumber: 'المسار №',
     tripId: 'رقم الرحلة',
@@ -267,8 +322,9 @@ export const translations = {
     startBoarding: 'بدء الصعود',
     startTrip: 'بدء الرحلة',
     endTrip: 'إنهاء الرحلة',
+    finishTrip: 'إنهاء الرحلة', // Added finishTrip translation
     selectTrip: 'اختر الرحلة',
-    prepareTrip: 'تحضير الرحلة', // New translation for trip preparation state
+    prepareTrip: 'تحضير الرحلة',
     // Route
     routeStops: 'المحطات مع الحجوزات',
     stops: 'المحطات',
@@ -278,8 +334,8 @@ export const translations = {
     stationEnd: 'المحطة',
     available: 'متاح',
     dropOff: 'النزول',
-    queue: 'الطابور الإلكتروني', // New translation
-    bookings: 'حجوزات', // New translation
+    queue: 'الطابور الإلكتروني',
+    bookings: 'حجوزات',
     // Seats
     occupancy: 'إشغال المقاعد',
     seats: 'المقاعد',
@@ -300,14 +356,14 @@ export const translations = {
     acceptBooking: 'قبول الحجز',
     scanBookingQR: 'مسح QR',
     noSeatsAvailable: 'لا توجد مقاعد متاحة',
-    accept: 'قبول', // New translation for QR modal buttons
-    reject: 'رفض', // New translation for QR modal buttons
-    revert: 'إرجاع', // New translation for QR modal buttons
-    scanQR: 'مسح QR', // Added scanQR translation
+    accept: 'قبول',
+    reject: 'رفض',
+    revert: 'إرجاع',
+    scanQR: 'مسح QR',
     // QR data fields
-    paymentAmount: 'المبلغ', // New translation
-    recipientInfo: 'المستلم', // New translation
-    qrCreatedAt: 'تم إنشاء QR', // New translation
+    paymentAmount: 'المبلغ',
+    recipientInfo: 'المستلم',
+    qrCreatedAt: 'تم إنشاء QR',
     // Transactions
     transactionSuccess: 'تمت العملية بنجاح',
     depositAmount: 'مبلغ الإيداع',
@@ -315,21 +371,21 @@ export const translations = {
     enterAmount: 'أدخل المبلغ',
     confirm: 'تأكيد',
     cancel: 'إلغاء',
-    currentTime: 'الوقت', // New translation
-    driverBalance: 'رصيد السائق', // New translation
-    reserved: 'محجوز', // New translation
-    available: 'متاح', // New translation
-    dailyIncome: 'الدخل اليومي', // New translation
-    weeklyIncome: 'الدخل الأسبوعي', // New translation
-    transactionHistory: 'سجل العمليات', // New translation
-    operations: 'عمليات', // New translation
-    booking: 'حجز', // New translation
-    client: 'عميل', // New translation
-    qr: 'QR', // New translation
-    settlement: 'تسوية', // New translation
-    createOperation: 'إنشاء عملية', // New translation
-    scanError: 'خطأ في المسح', // New translation
-    invalidQR: 'رمز QR غير صالح أو منتهي', // New translation
+    currentTime: 'الوقت',
+    driverBalance: 'رصيد السائق',
+    reserved: 'محجوز',
+    available: 'متاح',
+    dailyIncome: 'الدخل اليومي',
+    weeklyIncome: 'الدخل الأسبوعي',
+    transactionHistory: 'سجل العمليات',
+    operations: 'عمليات',
+    booking: 'حجز',
+    client: 'عميل',
+    qr: 'QR',
+    settlement: 'تسوية',
+    createOperation: 'إنشاء عملية',
+    scanError: 'خطأ في المسح',
+    invalidQR: 'رمز QR غير صالح أو منتهي',
   },
 } as const
 
