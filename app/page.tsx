@@ -1,0 +1,811 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { PlayCircle, StopCircle, User, Clock, MapPin, QrCode, Users, Minus, Plus, Wallet, LogOut, ArrowLeftRight } from 'lucide-react'
+import { LoginForm } from '@/components/login-form'
+import { translations, type Language } from '@/lib/translations'
+import { CashQRDialog } from '@/components/cash-qr-dialog'
+import { useToast } from '@/hooks/use-toast'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import Link from 'next/link'
+import { formatCurrency, formatDateTime, generateTripId } from '@/lib/utils'
+
+type TripStatus = 'inactive' | 'preparing' | 'boarding' | 'active'
+
+interface Seat {
+  id: number
+  status: 'free' | 'occupied'
+  passengerName?: string
+  fromStop?: number
+  toStop?: number
+  paymentMethod?: 'cash' | 'qr'
+  amountPaid?: number
+}
+
+interface Booking {
+  id: number
+  passengerName: string
+  pickupTime: string
+  pickupLocation: string
+  fromStopIndex: number
+  toStopIndex: number
+  amount: number
+  accepted?: boolean
+  scanned?: boolean
+  qrError?: string
+  count: number
+  showQRButtons?: boolean
+  qrData?: {
+    sum: number
+    recipient: string
+    created_at: string
+  }
+}
+
+interface RouteStop {
+  id: number
+  name: string
+  time: string
+}
+
+interface QueuePassenger {
+  id: number
+  name: string
+  queuePosition: number
+  isFirst: boolean
+  scanned?: boolean
+  count: number
+}
+
+const tripRoutes = {
+  '247': {
+    start: 'Центр',
+    end: 'Вокзал',
+    stops: [
+      { id: 0, name: 'Центр', time: '14:00' },
+      { id: 1, name: 'ул. Ленина', time: '14:15' },
+      { id: 2, name: 'ТЦ Галерея', time: '14:45' },
+      { id: 3, name: 'Вокзал', time: '15:15' },
+    ]
+  },
+  '248': {
+    start: 'Аэропорт',
+    end: 'Университет',
+    stops: [
+      { id: 0, name: 'Аэропорт', time: '10:00' },
+      { id: 1, name: 'пл. Революции', time: '10:20' },
+      { id: 2, name: 'пр. Победы', time: '10:40' },
+      { id: 3, name: 'Университет', time: '11:00' },
+    ]
+  },
+  '249': {
+    start: 'Рынок',
+    end: 'Больница',
+    stops: [
+      { id: 0, name: 'Рынок', time: '08:00' },
+      { id: 1, name: 'ул. Мира', time: '08:20' },
+      { id: 2, name: 'Парк', time: '08:40' },
+      { id: 3, name: 'Больница', time: '09:00' },
+    ]
+  },
+}
+
+export default function DriverDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [language, setLanguage] = useState<Language>('ru')
+  const t = translations[language]
+  const { toast } = useToast()
+
+  const [tripStatus, setTripStatus] = useState<TripStatus>('inactive')
+  const [tripId, setTripId] = useState<string>('')
+  const [selectedTrip, setSelectedTrip] = useState('')
+  const [isDirectionReversed, setIsDirectionReversed] = useState(false)
+  
+  const [prepareTimer, setPrepareTimer] = useState<number>(600)
+  
+  const [balance, setBalance] = useState(12450)
+  const [showCashQRDialog, setShowCashQRDialog] = useState(false)
+  const [currentCashAmount, setCurrentCashAmount] = useState(0)
+  const [qrScannedData, setQrScannedData] = useState<{
+    amount: number
+    recipient: string
+    createdAt: string
+    scannedPassengerId?: number
+  } | null>(null)
+  
+  const [stops, setStops] = useState<RouteStop[]>(tripRoutes['247'].stops)
+
+  const [seats, setSeats] = useState<Seat[]>([
+    { id: 1, status: 'occupied', passengerName: 'Иван П.', fromStop: 0, toStop: 3, paymentMethod: 'qr', amountPaid: 450 },
+    { id: 2, status: 'occupied', passengerName: 'Мария С.', fromStop: 0, toStop: 2, paymentMethod: 'cash', amountPaid: 280 },
+    { id: 3, status: 'free' },
+    { id: 4, status: 'free' },
+    { id: 5, status: 'occupied', passengerName: 'Алексей К.', fromStop: 0, toStop: 3, paymentMethod: 'qr', amountPaid: 380 },
+    { id: 6, status: 'free' },
+  ])
+
+  const [bookings, setBookings] = useState<Booking[]>([
+    { id: 1, passengerName: 'Ольга В.', pickupTime: '14:15', pickupLocation: tripRoutes['247'].stops[1].name, fromStopIndex: 1, toStopIndex: 3, amount: 320, count: 1 },
+    { id: 2, passengerName: 'Дмитрий Н.', pickupTime: '14:15', pickupLocation: tripRoutes['247'].stops[1].name, fromStopIndex: 1, toStopIndex: 3, amount: 320, count: 2 },
+    { id: 3, passengerName: 'Елена Т.', pickupTime: '14:45', pickupLocation: tripRoutes['247'].stops[2].name, fromStopIndex: 2, toStopIndex: 3, amount: 180, count: 1 },
+  ])
+
+  const [queuePassengers, setQueuePassengers] = useState<QueuePassenger[]>([
+    { id: 1, name: 'Петр С.', queuePosition: 1, isFirst: true, count: 1 },
+    { id: 2, name: 'Анна М.', queuePosition: 2, isFirst: false, count: 2 },
+    { id: 3, name: 'Игорь Л.', queuePosition: 3, isFirst: false, count: 1 },
+    { id: 4, name: 'Ольга К.', queuePosition: 4, isFirst: false, count: 3 },
+    { id: 5, name: 'Сергей Д.', queuePosition: 5, isFirst: false, count: 1 },
+  ])
+
+  const [manualOccupied, setManualOccupied] = useState(0)
+  const [tempBookingId, setTempBookingId] = useState<number | null>(null)
+  const [scanningForQueue, setScanningForQueue] = useState(false)
+
+  useEffect(() => {
+    const savedAuthState = localStorage.getItem('driverAuthenticated')
+    if (savedAuthState === 'true') {
+      setIsAuthenticated(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tripStatus === 'preparing') {
+      const interval = setInterval(() => {
+        setPrepareTimer(prev => prev - 1)
+      }, 1000)
+      
+      return () => clearInterval(interval)
+    }
+  }, [tripStatus])
+
+  const cycleLanguage = () => {
+    const languages: Language[] = ['ru', 'en', 'fr', 'ar']
+    const currentIndex = languages.indexOf(language)
+    const nextIndex = (currentIndex + 1) % languages.length
+    setLanguage(languages[nextIndex])
+  }
+
+  const handleTripButton = () => {
+    if (tripStatus === 'inactive') {
+      const newTripId = generateTripId()
+      setTripId(newTripId)
+      setTripStatus('preparing')
+      setPrepareTimer(600) // Reset to 10:00
+    } else if (tripStatus === 'preparing') {
+      setTripStatus('boarding')
+    } else if (tripStatus === 'boarding') {
+      setTripStatus('active')
+    } else {
+      setTripStatus('inactive')
+      setTripId('')
+      setIsDirectionReversed(false)
+      setPrepareTimer(600)
+    }
+  }
+
+  const getTripButtonText = () => {
+    if (tripStatus === 'inactive') return t.prepareTrip
+    if (tripStatus === 'preparing') {
+      return `${t.prepareTrip}  ${formatTimer(prepareTimer)}`
+    }
+    if (tripStatus === 'boarding') return t.startTrip
+    return t.endTrip
+  }
+
+  const getTripStatusEmoji = () => {
+    if (tripStatus === 'active') return '🚌'
+    if (tripStatus === 'boarding') return '👥'
+    if (tripStatus === 'preparing') return '⏱️'
+    return '⏸️'
+  }
+
+  const formatTimer = (seconds: number) => {
+    const isNegative = seconds < 0
+    const absSeconds = Math.abs(seconds)
+    const mins = Math.floor(absSeconds / 60)
+    const secs = absSeconds % 60
+    const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    return isNegative ? `-${timeStr}` : timeStr
+  }
+
+  const handleAcceptBooking = (bookingId: number) => {
+    const booking = bookings.find(b => b.id === bookingId)
+    if (!booking) return
+
+    if (booking.accepted && !booking.showQRButtons) {
+      // Open QR scanner
+      const mockAmount = booking.amount
+      setCurrentCashAmount(mockAmount)
+      setTempBookingId(bookingId)
+      setScanningForQueue(false)
+      setShowCashQRDialog(true)
+    } else {
+      // First time accepting - mark as accepted
+      setBookings(bookings.map(b => 
+        b.id === bookingId ? { ...b, accepted: true, qrError: undefined } : b
+      ))
+      
+      toast({
+        title: language === 'ru' ? 'Успешно' : language === 'fr' ? 'Succès' : language === 'ar' ? 'نجاح' : 'Success',
+        description: language === 'ru' ? 'Бронь принята. Теперь можно сканировать QR.' : 'Booking accepted. Now scan QR.',
+      })
+    }
+  }
+
+  const handleAcceptBookingQR = (bookingId: number) => {
+    const booking = bookings.find(b => b.id === bookingId)
+    if (!booking || !booking.qrData) return
+
+    const availableSeat = seats.find(seat => seat.status === 'free')
+    if (!availableSeat) {
+      toast({
+        title: t.scanError,
+        description: t.noSeatsAvailable,
+        variant: 'destructive'
+      })
+      return
+    }
+
+    setSeats(seats.map(seat => 
+      seat.id === availableSeat.id 
+        ? { 
+            ...seat, 
+            status: 'occupied', 
+            passengerName: booking.passengerName,
+            fromStop: booking.fromStopIndex,
+            toStop: booking.toStopIndex,
+            paymentMethod: 'qr',
+            amountPaid: booking.amount
+          }
+        : seat
+    ))
+
+    setBookings(bookings.filter(b => b.id !== bookingId))
+    setBalance(balance + booking.amount)
+
+    toast({
+      title: language === 'ru' ? 'Бронь принята' : 'Booking accepted',
+      description: `${booking.passengerName} - ${formatCurrency(booking.amount)} RUB`,
+    })
+  }
+
+  const handleRejectBookingQR = (bookingId: number) => {
+    setBookings(bookings.map(b => 
+      b.id === bookingId ? { 
+        ...b, 
+        showQRButtons: false, 
+        qrData: undefined,
+        qrError: language === 'ru' ? 'Бронь отклонена' : 'Booking rejected'
+      } : b
+    ))
+    
+    toast({
+      title: language === 'ru' ? 'Отклонено' : 'Rejected',
+      description: language === 'ru' ? 'Бронь отклонена' : 'Booking rejected',
+      variant: 'destructive'
+    })
+  }
+
+  const handleRevertBookingQR = (bookingId: number) => {
+    setBookings(bookings.map(b => 
+      b.id === bookingId ? { ...b, showQRButtons: false, qrData: undefined } : b
+    ))
+  }
+
+  const handleScanQueueQR = () => {
+    const mockAmount = 300 + Math.floor(Math.random() * 200)
+    setCurrentCashAmount(mockAmount)
+    setTempBookingId(null)
+    setScanningForQueue(true)
+    setShowCashQRDialog(true)
+  }
+
+  // Handle QR scan validation error
+  const handleQRScanError = () => {
+    toast({
+      title: t.scanError,
+      description: t.invalidQR,
+      variant: 'destructive'
+    })
+  }
+
+  const handleConfirmQR = () => {
+    // Modal auto-closes and this gets called on success
+    if (tempBookingId !== null && tempBookingId !== undefined) {
+      const booking = bookings.find(b => b.id === tempBookingId)
+      if (!booking) return
+
+      // Simulate QR code validation
+      const isValidQR = Math.random() > 0.3
+      if (!isValidQR) {
+        handleQRScanError()
+        setBookings(bookings.map(b => 
+          b.id === booking.id ? { ...b, qrError: t.invalidQR } : b
+        ))
+        setTempBookingId(null)
+        return
+      }
+
+      const mockQRData = {
+        sum: booking.amount,
+        recipient: language === 'ru' ? 'Водитель Иванов И.И.' : 'Driver Ivanov I.',
+        created_at: formatDateTime(new Date(Date.now() - Math.floor(Math.random() * 3600000)))
+      }
+
+      setBookings(bookings.map(b => 
+        b.id === booking.id ? { 
+          ...b, 
+          showQRButtons: true,
+          qrData: mockQRData,
+          qrError: undefined
+        } : b
+      ))
+      
+      toast({
+        title: language === 'ru' ? 'QR отсканирован' : 'QR scanned',
+        description: language === 'ru' ? 'Выберите действие' : 'Choose action',
+      })
+      
+      setTempBookingId(null)
+    } else if (scanningForQueue) {
+      const unscannedPassengers = queuePassengers.filter(p => !p.scanned)
+      if (unscannedPassengers.length === 0) {
+        toast({
+          title: language === 'ru' ? 'Очередь пуста' : 'Queue empty',
+          description: language === 'ru' ? 'Все пассажиры отсканированы' : 'All scanned',
+        })
+        return
+      }
+
+      const randomIndex = Math.floor(Math.random() * unscannedPassengers.length)
+      const scannedPassenger = unscannedPassengers[randomIndex]
+
+      const mockRecipient = language === 'ru' ? 'Водитель Иванов И.И.' : 'Driver Ivanov I.'
+      const mockCreatedAt = formatDateTime(new Date(Date.now() - Math.floor(Math.random() * 3600000)))
+
+      setQueuePassengers(queuePassengers.map(p => 
+        p.id === scannedPassenger.id ? { ...p, scanned: true } : p
+      ))
+
+      setQrScannedData({
+        amount: currentCashAmount,
+        recipient: mockRecipient,
+        createdAt: mockCreatedAt,
+        scannedPassengerId: scannedPassenger.id
+      })
+
+      setBalance(balance + currentCashAmount)
+
+      toast({
+        title: language === 'ru' ? 'QR отсканирован' : 'QR scanned',
+        description: `${scannedPassenger.name} - ${formatCurrency(currentCashAmount)} RUB`,
+      })
+      
+      setScanningForQueue(false)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('driverAuthenticated')
+    setIsAuthenticated(false)
+    setTripStatus('inactive')
+    setTripId('')
+  }
+
+  const handleToggleDirection = () => {
+    setIsDirectionReversed(!isDirectionReversed)
+    setStops([...stops].reverse())
+  }
+
+  useEffect(() => {
+    if (!selectedTrip) return
+    const currentRoute = tripRoutes[selectedTrip as keyof typeof tripRoutes]
+    if (currentRoute) {
+      setStops(isDirectionReversed ? [...currentRoute.stops].reverse() : currentRoute.stops)
+    }
+  }, [selectedTrip, isDirectionReversed])
+
+  useEffect(() => {
+    const actualOccupied = seats.filter(s => s.status === 'occupied').length
+    setManualOccupied(actualOccupied)
+  }, [seats])
+
+  if (!isAuthenticated) {
+    return <LoginForm 
+      onLogin={() => {
+        setIsAuthenticated(true)
+        localStorage.setItem('driverAuthenticated', 'true')
+      }} 
+      language={language}
+      onLanguageChange={cycleLanguage}
+    />
+  }
+
+  const occupiedCount = manualOccupied
+  const acceptedBookingsCount = bookings.filter(b => b.accepted).length
+  const freeCount = 6 - occupiedCount - acceptedBookingsCount
+  const pendingBookingsCount = bookings.filter(b => !b.accepted).length
+
+  const getRouteDisplayName = () => {
+    if (!selectedTrip) return t.selectTrip
+    const route = tripRoutes[selectedTrip as keyof typeof tripRoutes]
+    if (isDirectionReversed) {
+      return `${route.end} → ${route.start}`
+    }
+    return `${route.start} → ${route.end}`
+  }
+
+  return (
+    <div className="min-h-screen bg-background pb-6">
+      <div className="bg-card border-b border-border px-4 py-4 sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 flex-1">
+            <Select 
+              value={selectedTrip} 
+              onValueChange={(value) => {
+                setSelectedTrip(value)
+                setIsDirectionReversed(false)
+              }}
+              disabled={tripStatus !== 'inactive'}
+            >
+              <SelectTrigger 
+                className={`${tripStatus !== 'inactive' || (selectedTrip && tripStatus === 'inactive') ? "w-auto min-w-40 max-w-full" : "w-auto min-w-48 max-w-full"} h-auto min-h-10 ${
+                  tripStatus !== 'inactive' ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <SelectValue placeholder={t.selectTrip}>
+                  <span className="whitespace-normal leading-tight break-words">
+                    {selectedTrip && getRouteDisplayName()}
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="247">
+                  {tripRoutes['247'].start} → {tripRoutes['247'].end}
+                </SelectItem>
+                <SelectItem value="248">
+                  {tripRoutes['248'].start} → {tripRoutes['248'].end}
+                </SelectItem>
+                <SelectItem value="249">
+                  {tripRoutes['249'].start} → {tripRoutes['249'].end}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            
+            {tripStatus === 'inactive' && selectedTrip && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleToggleDirection}
+                className="h-10 w-10 flex-shrink-0"
+                title={language === 'ru' ? 'Изменить направление' : 'Toggle direction'}
+              >
+                <ArrowLeftRight className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Badge 
+              variant={tripStatus !== 'inactive' ? "default" : "secondary"}
+              className="text-2xl px-3 py-1"
+            >
+              {getTripStatusEmoji()}
+            </Badge>
+            <Link href="/balance">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+              >
+                <Wallet className="h-5 w-5" />
+              </Button>
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              className="h-9 w-9"
+            >
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+
+        {tripId && (
+          <div className="mb-3">
+            <p className="text-xs text-muted-foreground">
+              {t.tripId}: {tripId}
+            </p>
+          </div>
+        )}
+
+
+        <Button
+          onClick={handleTripButton}
+          size="lg"
+          className="w-full h-14 text-lg font-semibold"
+          variant={tripStatus === 'active' ? "destructive" : "default"}
+        >
+          {tripStatus === 'inactive' && <PlayCircle className="mr-2 h-6 w-6" />}
+          {tripStatus === 'active' && <StopCircle className="mr-2 h-6 w-6" />}
+          {getTripButtonText()}
+        </Button>
+      </div>
+
+      <div className="px-4 pt-6 space-y-6">
+        <Card className="p-4 border-2 border-border">
+          <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
+          <div className="grid grid-cols-4 gap-3">
+            <div className="text-center p-4 rounded-lg bg-secondary">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-7 w-7"
+                  onClick={() => setManualOccupied(Math.max(0, manualOccupied - 1))}
+                  disabled={manualOccupied === 0}
+                >
+                  <Minus className="h-3 w-3" />
+                </Button>
+                <div className="text-2xl font-bold text-primary">{occupiedCount}</div>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-7 w-7"
+                  onClick={() => setManualOccupied(Math.min(6, manualOccupied + 1))}
+                  disabled={manualOccupied === 6}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground">{t.occupied}</div>
+            </div>
+            <div className="text-center p-4 rounded-lg bg-secondary">
+              <div className="text-2xl font-bold text-blue-600">{acceptedBookingsCount}:{pendingBookingsCount}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t.bookingsShort}</div>
+            </div>
+            <div className="text-center p-4 rounded-lg bg-secondary">
+              <div className="text-2xl font-bold text-accent">{freeCount}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t.free}</div>
+            </div>
+            <div className="text-center p-4 rounded-lg bg-secondary">
+              <div className="text-2xl font-bold text-foreground">6</div>
+              <div className="text-xs text-muted-foreground mt-1">{t.total}</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4 border-2 border-border">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
+            </div>
+            <Badge variant="secondary" className="text-lg px-3 py-1">
+              {queuePassengers.length}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-5 gap-2 mb-4">
+            {queuePassengers.slice(0, 4).map((passenger) => (
+              <div
+                key={passenger.id}
+                className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 ${
+                  passenger.scanned 
+                    ? 'bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600' 
+                    : passenger.isFirst 
+                    ? 'bg-primary/10 border-primary' 
+                    : 'bg-secondary border-border'
+                }`}
+              >
+                <User className="h-6 w-6 mb-1" />
+                <span className="text-xs font-bold">
+                  {passenger.queuePosition} • {passenger.count} {t.bookings}
+                </span>
+              </div>
+            ))}
+            {queuePassengers.length >= 5 && (
+              <div
+                key={queuePassengers[4].id}
+                className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 border-dashed ${
+                  queuePassengers[4].scanned 
+                    ? 'bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600' 
+                    : 'bg-secondary border-border'
+                }`}
+              >
+                <User className="h-6 w-6 mb-1" />
+                <span className="text-xs font-bold">
+                  {queuePassengers[4].queuePosition} • {queuePassengers[4].count} {t.bookings}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {qrScannedData && (
+            <Card className="p-3 mb-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t.paymentAmount}:</span>
+                  <span className="font-bold text-green-600 dark:text-green-400">
+                    {formatCurrency(qrScannedData.amount)} RUB
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t.recipientInfo}:</span>
+                  <span className="font-semibold text-xs">{qrScannedData.recipient}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{t.qrCreatedAt}:</span>
+                  <span className="font-semibold text-xs">{qrScannedData.createdAt}</span>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          <Button
+            onClick={handleScanQueueQR}
+            className="w-full h-12"
+            variant="default"
+          >
+            <QrCode className="mr-2 h-5 w-5" />
+            {t.scanQR}
+          </Button>
+          
+          <p className="text-xs text-muted-foreground text-center mt-3 leading-relaxed">
+            {language === 'ru' 
+              ? 'Первый в очереди садится сразу, остальным нужно подтверждение' 
+              : language === 'fr'
+              ? 'Le premier monte directement, les autres nécessitent confirmation'
+              : language === 'ar'
+              ? 'الأول يصعد مباشرة، الآخرون يحتاجون تأكيد'
+              : 'First boards directly, others need confirmation'}
+          </p>
+        </Card>
+
+        <Card className="p-4 border-2 border-border">
+          <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
+          <div className="space-y-1">
+            {stops.slice(1, -1).map((stop, index) => {
+              const stopBookings = bookings.filter(b => b.fromStopIndex === stop.id)
+              const visibleBookings = stopBookings.filter(b => !b.qrData || b.showQRButtons)
+              const totalBookingsAtStop = visibleBookings.length
+              
+              return (
+                <div key={stop.id}>
+                  <div className="flex items-start gap-3 py-2">
+                    <div className="flex-shrink-0 mt-1">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-sm font-semibold text-muted-foreground">{stop.time}</span>
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <h3 className="font-semibold text-base text-foreground">{stop.name}</h3>
+                        </div>
+                      </div>
+
+                      {visibleBookings.length > 0 && (
+                        <div className="space-y-2 mt-3">
+                          {visibleBookings.map((booking) => (
+                            <div key={booking.id} className="p-3 rounded-lg bg-secondary border border-border">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="font-semibold text-sm text-foreground">
+                                  {booking.passengerName}
+                                </h4>
+                                <span className="text-xs text-muted-foreground font-semibold">
+                                  {booking.count} {t.bookings}
+                                </span>
+                              </div>
+
+                              {booking.qrError && (
+                                <div className="mb-2 p-2 rounded bg-destructive/10 border border-destructive/20">
+                                  <p className="text-xs text-destructive">{booking.qrError}</p>
+                                </div>
+                              )}
+
+                              {booking.qrData && (
+                                <Card className="p-2 mb-2 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                                  <div className="space-y-1 text-xs">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground">{t.paymentAmount}:</span>
+                                      <span className="font-bold text-green-600">{formatCurrency(booking.qrData.sum)} RUB</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground">{t.recipientInfo}:</span>
+                                      <span className="font-semibold">{booking.qrData.recipient}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground">{t.qrCreatedAt}:</span>
+                                      <span className="font-semibold">{booking.qrData.created_at}</span>
+                                    </div>
+                                  </div>
+                                </Card>
+                              )}
+
+                              {booking.showQRButtons ? (
+                                <div className="flex gap-2">
+                                  <Button
+                                    onClick={() => handleAcceptBookingQR(booking.id)}
+                                    className="flex-1 h-9 text-sm font-semibold"
+                                    variant="default"
+                                    size="sm"
+                                  >
+                                    {t.accept}
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleRejectBookingQR(booking.id)}
+                                    className="flex-1 h-9 text-sm font-semibold"
+                                    variant="destructive"
+                                    size="sm"
+                                  >
+                                    {t.reject}
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleRevertBookingQR(booking.id)}
+                                    className="flex-1 h-9 text-sm font-semibold"
+                                    variant="outline"
+                                    size="sm"
+                                  >
+                                    {t.revert}
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  onClick={() => handleAcceptBooking(booking.id)}
+                                  className="w-full h-9 text-sm font-semibold"
+                                  variant={booking.accepted ? "outline" : "default"}
+                                  size="sm"
+                                >
+                                  {booking.accepted ? (
+                                    <>
+                                      <QrCode className="mr-2 h-4 w-4" />
+                                      {t.scanQR}
+                                    </>
+                                  ) : (
+                                    t.acceptBooking
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {index < stops.slice(1, -1).length - 1 && (
+                    <div className="ml-2">
+                      <div className="w-px h-8 bg-border" />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      </div>
+
+      <CashQRDialog
+        open={showCashQRDialog}
+        onOpenChange={setShowCashQRDialog}
+        driverName={language === 'ru' ? 'Водитель Иванов И.И.' : 'Driver Ivanov I.'}
+        amount={currentCashAmount}
+        currency="RUB"
+        onConfirm={handleConfirmQR}
+        language={language}
+      />
+    </div>
+  )
+}
