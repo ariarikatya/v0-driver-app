@@ -10,6 +10,12 @@ import { formatCurrency, formatDateTime } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { CashQRDialog } from "@/components/cash-qr-dialog"
 
 interface Transaction {
@@ -32,22 +38,7 @@ export default function BalancePage() {
   const router = useRouter()
 
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("today")
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter | "all">("all")
-
-  const [showCashReceiveDialog, setShowCashReceiveDialog] = useState(false)
-  const [cashQRState, setCashQRState] = useState<{
-    scanning: boolean
-    amount: number
-    showAcceptButton: boolean
-    qrError?: string
-    redCross?: boolean
-    showReject?: boolean
-    bookingId?: string
-  }>({
-    scanning: false,
-    amount: 0,
-    showAcceptButton: false,
-  })
+  const [paymentFilters, setPaymentFilters] = useState<PaymentFilter[]>(["qr", "cash"])
 
   const [balance, setBalance] = useState({
     current: 12450,
@@ -117,26 +108,38 @@ export default function BalancePage() {
   }
 
   const togglePaymentFilter = (filter: PaymentFilter) => {
-    if (paymentFilter === filter) {
-      setPaymentFilter("all")
-    } else {
-      setPaymentFilter(filter)
-    }
+    setPaymentFilters((prev) => {
+      if (prev.includes(filter)) {
+        return prev.filter((f) => f !== filter)
+      } else {
+        return [...prev, filter]
+      }
+    })
   }
 
   const filteredTransactions = transactions.filter((t) => {
     const matchesPeriod = true
-    const matchesPayment = paymentFilter === "all" || t.paymentMethod === paymentFilter
+    const matchesPayment = paymentFilters.length === 0 || paymentFilters.includes(t.paymentMethod)
     return matchesPeriod && matchesPayment
   })
 
   const [expandedSettlement, setExpandedSettlement] = useState<number | null>(null)
   const [showCreateOperationDialog, setShowCreateOperationDialog] = useState(false)
   const [selectedTransactionId, setSelectedTransactionId] = useState<number | null>(null)
-
-  const toggleSettlement = (id: number) => {
-    setExpandedSettlement(expandedSettlement === id ? null : id)
-  }
+  const [showCashReceiveDialog, setShowCashReceiveDialog] = useState(false)
+  const [cashQRState, setCashQRState] = useState<{
+    scanning: boolean
+    amount: number
+    showAcceptButton: boolean
+    qrError?: string
+    redCross?: boolean
+    showReject?: boolean
+    bookingId?: string
+  }>({
+    scanning: false,
+    amount: 0,
+    showAcceptButton: false,
+  })
 
   const handleCreateOperation = (transactionId: number) => {
     setSelectedTransactionId(transactionId)
@@ -288,6 +291,10 @@ export default function BalancePage() {
     })
   }
 
+  const toggleSettlement = (id: number) => {
+    setExpandedSettlement((prev) => (prev === id ? null : id))
+  }
+
   useEffect(() => {
     const savedAuthState = localStorage.getItem("driverAuthenticated")
     if (savedAuthState !== "true") {
@@ -408,16 +415,42 @@ export default function BalancePage() {
               </SelectContent>
             </Select>
 
-            <Select value={paymentFilter} onValueChange={(value) => setPaymentFilter(value as PaymentFilter | "all")}>
-              <SelectTrigger className="w-[120px]">
-                <SelectValue placeholder={language === "ru" ? "Все" : "All"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{language === "ru" ? "Все" : "All"}</SelectItem>
-                <SelectItem value="qr">{t.qr}</SelectItem>
-                <SelectItem value="cash">{language === "ru" ? "ЛС" : "LS"}</SelectItem>
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-[120px] justify-between bg-transparent">
+                  <span className="text-sm">
+                    {paymentFilters.length === 0
+                      ? language === "ru"
+                        ? "Все"
+                        : "All"
+                      : paymentFilters.length === 2
+                        ? language === "ru"
+                          ? "Все"
+                          : "All"
+                        : paymentFilters[0] === "qr"
+                          ? t.qr
+                          : language === "ru"
+                            ? "ЛС"
+                            : "LS"}
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[120px]">
+                <DropdownMenuCheckboxItem
+                  checked={paymentFilters.includes("qr")}
+                  onCheckedChange={() => togglePaymentFilter("qr")}
+                >
+                  {t.qr}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={paymentFilters.includes("cash")}
+                  onCheckedChange={() => togglePaymentFilter("cash")}
+                >
+                  {language === "ru" ? "ЛС" : "LS"}
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           <div className="space-y-3">
