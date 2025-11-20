@@ -8,6 +8,14 @@ import { Label } from '@/components/ui/label'
 import { UserPlus, Upload, X } from 'lucide-react'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface RegisterFormProps {
   onRegister: () => void
@@ -20,6 +28,9 @@ export function RegisterForm({ onRegister, onBackToLogin, language }: RegisterFo
   const [password, setPassword] = useState('')
   const [city, setCity] = useState('')
   const [carNumber, setCarNumber] = useState('')
+  const [phone, setPhone] = useState('')
+  const [whatsapp, setWhatsapp] = useState('')
+  const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState(true)
   const [documents, setDocuments] = useState<File[]>([])
   const t = translations[language]
 
@@ -27,11 +38,11 @@ export function RegisterForm({ onRegister, onBackToLogin, language }: RegisterFo
     e.preventDefault()
     
     // Mock registration
-    if (email && password && city && carNumber) {
+    if (email && password && city && carNumber && phone) {
       alert(language === 'ru' ? 'Регистрация успешна!' : 'Registration successful!')
       onRegister()
     } else {
-      alert(language === 'ru' ? 'Заполните все поля' : 'Fill all fields')
+      alert(language === 'ru' ? 'Заполните все обязательные поля' : 'Fill all required fields')
     }
   }
 
@@ -85,15 +96,71 @@ export function RegisterForm({ onRegister, onBackToLogin, language }: RegisterFo
 
           <div className="space-y-2">
             <Label htmlFor="city">{t.city}</Label>
+            <Select value={city} onValueChange={setCity} required>
+              <SelectTrigger className="h-12">
+                <SelectValue placeholder={language === 'ru' ? 'Выберите город' : 'Select city'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="moscow">{language === 'ru' ? 'Москва' : 'Moscow'}</SelectItem>
+                <SelectItem value="spb">{language === 'ru' ? 'Санкт-Петербург' : 'Saint Petersburg'}</SelectItem>
+                <SelectItem value="kazan">{language === 'ru' ? 'Казань' : 'Kazan'}</SelectItem>
+                <SelectItem value="novosibirsk">{language === 'ru' ? 'Новосибирск' : 'Novosibirsk'}</SelectItem>
+                <SelectItem value="ekb">{language === 'ru' ? 'Екатеринбург' : 'Yekaterinburg'}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="phone">
+              {language === 'ru' ? 'Номер телефона' : 'Phone Number'} *
+            </Label>
             <Input
-              id="city"
-              type="text"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder={language === 'ru' ? 'Москва' : 'Moscow'}
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value)
+                if (whatsappSameAsPhone) {
+                  setWhatsapp(e.target.value)
+                }
+              }}
+              placeholder="+7 900 123-45-67"
               required
               className="h-12"
             />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2 mb-2">
+              <Checkbox
+                id="whatsapp-same"
+                checked={whatsappSameAsPhone}
+                onCheckedChange={(checked) => {
+                  setWhatsappSameAsPhone(checked as boolean)
+                  if (checked) {
+                    setWhatsapp(phone)
+                  }
+                }}
+              />
+              <Label htmlFor="whatsapp-same" className="text-sm font-normal cursor-pointer">
+                {language === 'ru' ? 'WhatsApp совпадает с телефоном' : 'WhatsApp same as phone'}
+              </Label>
+            </div>
+            {!whatsappSameAsPhone && (
+              <>
+                <Label htmlFor="whatsapp">
+                  {language === 'ru' ? 'Номер WhatsApp' : 'WhatsApp Number'}
+                </Label>
+                <Input
+                  id="whatsapp"
+                  type="tel"
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(e.target.value)}
+                  placeholder="+7 900 123-45-67"
+                  className="h-12"
+                />
+              </>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -118,7 +185,7 @@ export function RegisterForm({ onRegister, onBackToLogin, language }: RegisterFo
                   {language === 'ru' ? 'Загрузите документы' : 'Upload documents'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {language === 'ru' ? 'Паспорт, права, лицензия' : 'Passport, license, permits'}
+                  {language === 'ru' ? 'Удостоверение личности, права, лицензия' : 'ID, license, permits'}
                 </p>
                 <Input
                   id="documents"

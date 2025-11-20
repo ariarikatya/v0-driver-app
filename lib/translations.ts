@@ -20,6 +20,15 @@ export const translations = {
     month: 'Месяц',
     filterByPeriod: 'Фильтр по периоду',
     filterByType: 'Фильтр по типу',
+    phone: 'Телефон',
+    whatsapp: 'WhatsApp',
+    idDocument: 'Удостоверение личности',
+    bookingNotFound: 'QR не найден',
+    qrMismatch: 'QR не соответствует',
+    clientLeft: 'Клиент ушёл',
+    noMatch: 'Нет совпадения',
+    cashReceive: 'Приём наличных',
+    qrNotFound: 'QR не найден', // Added qrNotFound translation
     // Header
     tripNumber: 'Маршрут №',
     tripId: 'ID рейса',
@@ -117,6 +126,15 @@ export const translations = {
     month: 'Month',
     filterByPeriod: 'Filter by period',
     filterByType: 'Filter by type',
+    phone: 'Phone',
+    whatsapp: 'WhatsApp',
+    idDocument: 'ID Document',
+    bookingNotFound: 'QR not found',
+    qrMismatch: 'QR mismatch',
+    clientLeft: 'Client left',
+    noMatch: 'No match',
+    cashReceive: 'Cash Receive',
+    qrNotFound: 'QR not found', // Added qrNotFound translation
     // Header
     tripNumber: 'Route #',
     tripId: 'Trip ID',
@@ -214,6 +232,15 @@ export const translations = {
     month: 'Mois',
     filterByPeriod: 'Filtrer par période',
     filterByType: 'Filtrer par type',
+    phone: 'Téléphone',
+    whatsapp: 'WhatsApp',
+    idDocument: 'Pièce d\'identité',
+    bookingNotFound: 'QR introuvable',
+    qrMismatch: 'QR incompatible',
+    clientLeft: 'Client parti',
+    noMatch: 'Aucune correspondance',
+    cashReceive: 'Réception espèces',
+    qrNotFound: 'QR introuvable', // Added qrNotFound translation
     // Header
     tripNumber: 'Itinéraire №',
     tripId: 'ID du trajet',
@@ -311,6 +338,15 @@ export const translations = {
     month: 'شهر',
     filterByPeriod: 'تصفية حسب الفترة',
     filterByType: 'تصفية حسب النوع',
+    phone: 'الهاتف',
+    whatsapp: 'واتساب',
+    idDocument: 'وثيقة الهوية',
+    bookingNotFound: 'QR غير موجود',
+    qrMismatch: 'QR غير متطابق',
+    clientLeft: 'غادر العميل',
+    noMatch: 'لا يوجد تطابق',
+    cashReceive: 'استلام نقدي',
+    qrNotFound: 'QR غير موجود', // Added qrNotFound translation
     // Header
     tripNumber: 'المسار №',
     tripId: 'رقم الرحلة',
