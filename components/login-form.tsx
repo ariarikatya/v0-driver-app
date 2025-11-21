@@ -1,54 +1,78 @@
-'use client'
+"use client"
 
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { LogIn, Languages } from 'lucide-react'
-import type { Language } from '@/lib/translations'
-import { translations } from '@/lib/translations'
+import type React from "react"
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { LogIn, Languages, Eye, EyeOff } from "lucide-react"
+import type { Language } from "@/lib/translations"
+import { translations } from "@/lib/translations"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface LoginFormProps {
   onLogin: () => void
   onRegister: () => void
   language: Language
-  onLanguageChange: () => void
+  onLanguageChange: (lang: Language) => void
 }
 
 export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: LoginFormProps) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const t = translations[language]
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     // Проверка тестовых данных
-    if (email === 'driver@test.com' && password === 'driver123') {
+    if (email === "driver@test.com" && password === "driver123") {
       onLogin()
     } else {
-      alert(language === 'ru' ? 'Неверные данные для входа' : 'Invalid credentials')
+      alert(language === "ru" ? "Неверные данные для входа" : "Invalid credentials")
     }
   }
 
   const fillTestAccount = () => {
-    setEmail('driver@test.com')
-    setPassword('driver123')
+    setEmail("driver@test.com")
+    setPassword("driver123")
   }
+
+  const languageOptions = [
+    { code: "fr" as Language, name: "Français", flag: "🇫🇷" },
+    { code: "ar" as Language, name: "العربية", flag: "🇸🇦" },
+    { code: "en" as Language, name: "English", flag: "🇬🇧" },
+    { code: "ru" as Language, name: "Русский", flag: "🇷🇺" },
+  ]
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-6">
         <div className="flex justify-end mb-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onLanguageChange}
-            className="h-9 w-9"
-          >
-            <Languages className="h-5 w-5" />
-          </Button>
+          <Select value={language} onValueChange={(value) => onLanguageChange(value as Language)}>
+            <SelectTrigger className="w-[180px] border-2 border-primary/20">
+              <SelectValue>
+                <div className="flex items-center gap-2">
+                  <Languages className="h-4 w-4" />
+                  <span>{languageOptions.find((l) => l.code === language)?.flag}</span>
+                  <span>{languageOptions.find((l) => l.code === language)?.name}</span>
+                </div>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {languageOptions.map((lang) => (
+                <SelectItem key={lang.code} value={lang.code}>
+                  <div className="flex items-center gap-2">
+                    <span>{lang.flag}</span>
+                    <span>{lang.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="text-center mb-6">
@@ -67,7 +91,7 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={language === 'ru' ? 'your@email.com' : 'your@email.com'}
+              placeholder={language === "ru" ? "your@email.com" : "your@email.com"}
               required
               className="h-12"
             />
@@ -75,15 +99,26 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
 
           <div className="space-y-2">
             <Label htmlFor="password">{t.password}</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="h-12"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="h-12 pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-0 h-12 w-12"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
 
           <Button type="submit" className="w-full h-12 text-base font-semibold">
@@ -92,13 +127,14 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
         </form>
 
         <div className="mt-4 text-center">
-          <Button
-            type="button"
-            variant="link"
-            onClick={onRegister}
-            className="text-sm"
-          >
-            {language === 'ru' ? 'Нет аккаунта? Зарегистрироваться' : language === 'fr' ? 'Pas de compte ? S\'inscrire' : language === 'ar' ? 'لا يوجد حساب؟ سجل' : 'No account? Register'}
+          <Button type="button" variant="link" onClick={onRegister} className="text-sm">
+            {language === "ru"
+              ? "Нет аккаунта? Зарегистрироваться"
+              : language === "fr"
+                ? "Pas de compte ? S'inscrire"
+                : language === "ar"
+                  ? "لا يوجد حساب؟ سجل"
+                  : "No account? Register"}
           </Button>
         </div>
 
@@ -111,14 +147,8 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
             <p>Email: driver@test.com</p>
             <p>Password: driver123</p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={fillTestAccount}
-            className="w-full"
-          >
-            {language === 'ru' ? 'Заполнить' : 'Fill'}
+          <Button type="button" variant="outline" size="sm" onClick={fillTestAccount} className="w-full bg-transparent">
+            {language === "ru" ? "Заполнить" : "Fill"}
           </Button>
         </div>
       </Card>

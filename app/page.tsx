@@ -120,6 +120,7 @@ const tripRoutes = {
 export default function DriverDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
+  const [userStatus, setUserStatus] = useState<"pending" | "approved">("approved")
   const [language, setLanguage] = useState<Language>("ru")
   const t = translations[language]
   const { toast } = useToast()
@@ -228,6 +229,10 @@ export default function DriverDashboard() {
     if (savedAuthState === "true") {
       setIsAuthenticated(true)
     }
+    const savedUserStatus = localStorage.getItem("userStatus")
+    if (savedUserStatus) {
+      setUserStatus(savedUserStatus as "pending" | "approved")
+    }
   }, [])
 
   useEffect(() => {
@@ -245,6 +250,10 @@ export default function DriverDashboard() {
     const currentIndex = languages.indexOf(language)
     const nextIndex = (currentIndex + 1) % languages.length
     setLanguage(languages[nextIndex])
+  }
+
+  const handleLanguageChange = (lang: Language) => {
+    setLanguage(lang)
   }
 
   const clickStartPrep = () => {
@@ -360,40 +369,58 @@ export default function DriverDashboard() {
     const booking = bookings.find((b) => b.id === bookingId)
     if (!booking || !booking.qrData) return
 
-    console.log("[v0] Accepting booking QR:", bookingId)
+    console.log("[v0] accept:clicked", {
+      bookingId: bookingId,
+      amount: booking.amount,
+      timestamp: new Date().toISOString(),
+    })
 
-    const availableSeat = seats.find((seat) => seat.status === "free")
-    if (!availableSeat) {
-      toast({
-        title: t.scanError,
-        description: t.noSeatsAvailable,
-        variant: "destructive",
-      })
-      return
+    const bookingCount = booking.count || 1
+    // Find available seats and mark them as occupied
+    let seatsToOccupy = bookingCount
+    const updatedSeats = [...seats]
+
+    for (let i = 0; i < updatedSeats.length && seatsToOccupy > 0; i++) {
+      if (updatedSeats[i].status === "free") {
+        updatedSeats[i] = {
+          ...updatedSeats[i],
+          status: "occupied",
+          passengerName: booking.passengerName,
+          fromStop: booking.fromStopIndex,
+          toStop: booking.toStopIndex,
+          paymentMethod: "qr",
+          amountPaid: booking.amount / bookingCount,
+        }
+        seatsToOccupy--
+      }
     }
 
-    setSeats(
-      seats.map((seat) =>
-        seat.id === availableSeat.id
-          ? {
-              ...seat,
-              status: "occupied",
-              passengerName: booking.passengerName,
-              fromStop: booking.fromStopIndex,
-              toStop: booking.toStopIndex,
-              paymentMethod: "qr",
-              amountPaid: booking.amount,
-            }
-          : seat,
-      ),
-    )
-
+    setSeats(updatedSeats)
     setBookings(bookings.filter((b) => b.id !== bookingId))
     setBalance(balance + booking.amount)
 
     toast({
       title: language === "ru" ? "Бронь принята" : "Booking accepted",
       description: `${booking.passengerName} - ${formatCurrency(booking.amount)} RUB`,
+    })
+  }
+
+  const handleRejectBookingQR = (bookingId: number) => {
+    const booking = bookings.find((b) => b.id === bookingId)
+    if (!booking) return
+
+    console.log("[v0] reject:clicked", {
+      bookingId: bookingId,
+      reason: "driver_rejected_valid_qr",
+      timestamp: new Date().toISOString(),
+    })
+
+    setBookings(bookings.filter((b) => b.id !== bookingId))
+
+    toast({
+      title: language === "ru" ? "Бронь отклонена" : "Booking rejected",
+      description: booking.passengerName,
+      variant: "destructive",
     })
   }
 
@@ -407,10 +434,11 @@ export default function DriverDashboard() {
       const booking = bookings.find((b) => b.id === tempBookingId)
       if (!booking) return
 
-      console.log("[v0] QR scan valid for booking:", tempBookingId, {
+      console.log("[v0] scan:result", {
         bookingId: tempBookingId,
         stopId: booking.fromStopIndex,
         match: true,
+        timestamp: new Date().toISOString(),
       })
 
       const mockQRData = {
@@ -434,7 +462,7 @@ export default function DriverDashboard() {
 
       toast({
         title: language === "ru" ? "QR отсканирован" : "QR scanned",
-        description: language === "ru" ? "Нажмите Принять" : "Press Accept",
+        description: language === "ru" ? "Нажмите Принять или Отклонить" : "Press Accept or Reject",
       })
 
       setTempBookingId(null)
@@ -443,18 +471,20 @@ export default function DriverDashboard() {
       const passenger = queuePassengers.find((p) => p.id === currentQueueScanId)
       if (!passenger) return
 
-      console.log("[v0] QR scan valid for queue passenger:", currentQueueScanId, {
+      console.log("[v0] scan:result", {
         passengerId: currentQueueScanId,
         match: true,
+        timestamp: new Date().toISOString(),
       })
 
       setQueuePassengers(queuePassengers.map((p) => (p.id === currentQueueScanId ? { ...p, scanned: true } : p)))
 
       const mockRecipient = language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I."
       const mockCreatedAt = formatDateTime(new Date(Date.now() - Math.floor(Math.random() * 3600000)))
+      const mockAmount = currentCashAmount
 
       setQrScannedData({
-        amount: currentCashAmount,
+        amount: mockAmount,
         recipient: mockRecipient,
         createdAt: mockCreatedAt,
         scannedPassengerId: currentQueueScanId,
@@ -472,19 +502,19 @@ export default function DriverDashboard() {
 
   const handleInvalidQR = () => {
     if (tempBookingId !== null && tempBookingId !== undefined) {
-      console.log("[v0] QR scan invalid for booking:", tempBookingId, {
+      console.log("[v0] scan:result", {
         bookingId: tempBookingId,
         match: false,
-        reason: "QR mismatch or not found",
+        reason: "QR mismatch",
+        timestamp: new Date().toISOString(),
       })
-      // Keep modal open, will show "QR не найден" button via showNotFoundButton prop
     } else if (scanningForQueue || currentQueueScanId !== null) {
-      console.log("[v0] QR scan invalid for queue passenger:", currentQueueScanId, {
+      console.log("[v0] scan:result", {
         passengerId: currentQueueScanId,
         match: false,
         reason: "QR mismatch",
+        timestamp: new Date().toISOString(),
       })
-      // Keep modal open, will show "QR не найден" button
     }
   }
 
@@ -492,7 +522,7 @@ export default function DriverDashboard() {
     if (tempBookingId === null && currentQueueScanId === null) return
 
     if (tempBookingId !== null) {
-      console.log("[v0] QR not found clicked for booking:", tempBookingId)
+      console.log("[v0] qr:not_found_clicked", { bookingId: tempBookingId, timestamp: new Date().toISOString() })
       const mismatchType = language === "ru" ? "QR не найден" : "QR not found"
 
       const currentBooking = bookings.find((b) => b.id === tempBookingId)
@@ -540,7 +570,7 @@ export default function DriverDashboard() {
       setShowCashQRDialog(false)
       setTempBookingId(null)
     } else if (currentQueueScanId !== null) {
-      console.log("[v0] QR not found clicked for queue passenger:", currentQueueScanId)
+      console.log("[v0] qr:not_found_clicked", { passengerId: currentQueueScanId, timestamp: new Date().toISOString() })
 
       const currentPassenger = queuePassengers.find((p) => p.id === currentQueueScanId)
       if (!currentPassenger) return
@@ -593,14 +623,55 @@ export default function DriverDashboard() {
     const passenger = queuePassengers.find((p) => p.id === passengerId)
     if (!passenger) return
 
-    console.log("[v0] Accepting queue passenger:", passengerId)
+    console.log("[v0] accept:clicked", {
+      passengerId: passengerId,
+      count: passenger.count,
+      timestamp: new Date().toISOString(),
+    })
 
+    const passengerCount = passenger.count || 1
+    let seatsToOccupy = passengerCount
+    const updatedSeats = [...seats]
+
+    for (let i = 0; i < updatedSeats.length && seatsToOccupy > 0; i++) {
+      if (updatedSeats[i].status === "free") {
+        updatedSeats[i] = {
+          ...updatedSeats[i],
+          status: "occupied",
+          passengerName: passenger.name,
+          paymentMethod: "qr",
+        }
+        seatsToOccupy--
+      }
+    }
+
+    setSeats(updatedSeats)
     setQueuePassengers(queuePassengers.filter((p) => p.id !== passengerId))
     setQrScannedData(null)
 
     toast({
       title: language === "ru" ? "Пассажир принят" : "Passenger accepted",
       description: `${passenger.name}`,
+    })
+  }
+
+  const handleRejectQueueQR = (passengerId: number) => {
+    const passenger = queuePassengers.find((p) => p.id === passengerId)
+    if (!passenger) return
+
+    console.log("[v0] reject:clicked", {
+      passengerId: passengerId,
+      reason: "driver_rejected_valid_qr",
+      timestamp: new Date().toISOString(),
+    })
+
+    setQueuePassengers(queuePassengers.filter((p) => p.id !== passengerId))
+    setQrScannedData(null)
+
+    toast({
+      title: language === "ru" ? "Пассажир отклонён" : "Passenger rejected",
+      description: passenger.name,
+      variant: "destructive",
     })
   }
 
@@ -614,7 +685,9 @@ export default function DriverDashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem("driverAuthenticated")
+    localStorage.removeItem("userStatus")
     setIsAuthenticated(false)
+    setUserStatus("approved") // Reset to default
     setTripStatus(STATE.PREP_IDLE)
     setTripId("")
   }
@@ -628,7 +701,11 @@ export default function DriverDashboard() {
     const booking = bookings.find((b) => b.id === bookingId)
     if (!booking) return
 
-    console.log("[v0] Rejecting booking with QR error:", bookingId)
+    console.log("[v0] reject:clicked", {
+      bookingId: bookingId,
+      reason: "qr_not_found",
+      timestamp: new Date().toISOString(),
+    })
 
     const currentBooking = bookings.find((b) => b.id === bookingId)
     if (currentBooking) {
@@ -722,7 +799,12 @@ export default function DriverDashboard() {
       return (
         <RegisterForm
           onRegister={() => {
+            const isTestUser = false // Mock: new users are pending by default
+            setUserStatus(isTestUser ? "approved" : "pending")
             setShowRegister(false)
+            setIsAuthenticated(true)
+            localStorage.setItem("driverAuthenticated", "true")
+            localStorage.setItem("userStatus", isTestUser ? "approved" : "pending")
           }}
           onBackToLogin={() => setShowRegister(false)}
           language={language}
@@ -735,10 +817,13 @@ export default function DriverDashboard() {
         onLogin={() => {
           setIsAuthenticated(true)
           localStorage.setItem("driverAuthenticated", "true")
+          // Test account is always approved
+          setUserStatus("approved")
+          localStorage.setItem("userStatus", "approved")
         }}
         onRegister={() => setShowRegister(true)}
         language={language}
-        onLanguageChange={cycleLanguage}
+        onLanguageChange={handleLanguageChange}
       />
     )
   }
@@ -766,6 +851,9 @@ export default function DriverDashboard() {
 
   const isRouteDropdownDisabled = tripStatus !== STATE.PREP_IDLE
   const showToggleDirection = tripStatus === STATE.PREP_IDLE && selectedTrip
+
+  const isPanelsDisabled = tripStatus !== STATE.PREP_IDLE && !selectedTrip
+  const showMainButton = selectedTrip || tripStatus === STATE.PREP_IDLE
 
   return (
     <div className="min-h-screen bg-background pb-6">
@@ -840,14 +928,20 @@ export default function DriverDashboard() {
           </div>
         )}
 
-        {tripStatus !== STATE.IN_ROUTE && (
-          <Button onClick={handleTripButton} size="lg" className="w-full h-14 text-lg font-semibold" variant="default">
+        {userStatus === "approved" && showMainButton && tripStatus !== STATE.IN_ROUTE && (
+          <Button
+            onClick={handleTripButton}
+            size="lg"
+            className="w-full h-14 text-lg font-semibold"
+            variant="default"
+            disabled={!selectedTrip}
+          >
             {tripStatus === STATE.PREP_IDLE && <PlayCircle className="mr-2 h-6 w-6" />}
             {getTripButtonText()}
           </Button>
         )}
 
-        {tripStatus === STATE.IN_ROUTE && (
+        {userStatus === "approved" && tripStatus === STATE.IN_ROUTE && (
           <Button onClick={clickFinish} size="lg" className="w-full h-14 text-lg font-semibold" variant="destructive">
             <StopCircle className="mr-2 h-6 w-6" />
             {t.finishTrip}
@@ -856,6 +950,33 @@ export default function DriverDashboard() {
       </div>
 
       <div className="px-4 pt-6 space-y-6">
+        {userStatus === "pending" && (
+          <Card className="p-6 border-2 border-orange-500/50 bg-orange-50 dark:bg-orange-900/20">
+            <div className="flex items-center gap-3 mb-4">
+              <Badge variant="secondary" className="text-2xl px-3 py-1">
+                ⏳
+              </Badge>
+              <div className="flex-1">
+                <p className="text-sm text-foreground leading-relaxed">{t.awaitingApproval}</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full bg-transparent"
+              onClick={() => {
+                // Mock refresh - in real app would check server
+                toast({
+                  title: language === "ru" ? "Статус проверен" : "Status checked",
+                  description: language === "ru" ? "Ожидание подтверждения" : "Awaiting approval",
+                })
+              }}
+            >
+              {t.refreshStatus}
+            </Button>
+          </Card>
+        )}
+
         <Card className="p-4 border-2 border-border">
           <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
           <div className="grid grid-cols-4 gap-3">
@@ -900,8 +1021,8 @@ export default function DriverDashboard() {
           </div>
         </Card>
 
-        {tripStatus !== STATE.IN_ROUTE && (
-          <Card className="p-4 border-2 border-border">
+        {userStatus === "approved" && tripStatus !== STATE.IN_ROUTE && (
+          <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
@@ -980,14 +1101,38 @@ export default function DriverDashboard() {
             </div>
 
             {qrScannedData && (
-              <div className="flex gap-2 mb-4">
-                <Button
-                  onClick={() => handleAcceptQueueQR(qrScannedData.scannedPassengerId!)}
-                  className="flex-1 h-12"
-                  variant="default"
-                >
-                  {t.accept}
-                </Button>
+              <div>
+                <div className="mb-3 p-3 rounded-lg bg-secondary border border-border">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t.sumLabel}: {formatCurrency(qrScannedData.amount)} RUB
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleAcceptQueueQR(qrScannedData.scannedPassengerId!)}
+                    className="flex-1 h-12"
+                    variant="default"
+                  >
+                    {t.accept}
+                  </Button>
+                  <Button
+                    onClick={() => handleRejectQueueQR(qrScannedData.scannedPassengerId!)}
+                    className="flex-1 h-12"
+                    variant="destructive"
+                  >
+                    {t.reject}
+                  </Button>
+                  <Button
+                    onClick={() => setQrScannedData(null)}
+                    className="h-12 w-12"
+                    variant="outline"
+                    size="icon"
+                    title={language === "ru" ? "Вернуть" : "Revert"}
+                  >
+                    <Undo2 className="h-5 w-5" />
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -1000,7 +1145,7 @@ export default function DriverDashboard() {
           </Card>
         )}
 
-        <Card className="p-4 border-2 border-border">
+        <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
           <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
           <div className="space-y-1">
             {stops.slice(1, -1).map((stop, index) => {
@@ -1062,25 +1207,41 @@ export default function DriverDashboard() {
                                 </div>
                               )}
 
-                              {!booking.qrError && booking.showQRButtons && (
-                                <div className="flex gap-2">
-                                  <Button
-                                    onClick={() => handleAcceptBookingQR(booking.id)}
-                                    className="flex-1 h-9 text-sm font-semibold"
-                                    variant="default"
-                                    size="sm"
-                                  >
-                                    {t.accept}
-                                  </Button>
-                                  <Button
-                                    onClick={() => handleRevertBookingQR(booking.id)}
-                                    className="h-9 w-9 text-sm font-semibold"
-                                    variant="outline"
-                                    size="icon"
-                                    title={language === "ru" ? "Вернуть" : "Revert"}
-                                  >
-                                    <Undo2 className="h-4 w-4" />
-                                  </Button>
+                              {!booking.qrError && booking.showQRButtons && booking.qrData && (
+                                <div>
+                                  <div className="mb-3 p-2 rounded bg-secondary border border-border">
+                                    <p className="text-xs font-semibold text-foreground">
+                                      {t.sumLabel}: {formatCurrency(booking.qrData.sum)} RUB
+                                    </p>
+                                  </div>
+
+                                  <div className="flex gap-2">
+                                    <Button
+                                      onClick={() => handleAcceptBookingQR(booking.id)}
+                                      className="flex-1 h-9 text-sm font-semibold"
+                                      variant="default"
+                                      size="sm"
+                                    >
+                                      {t.accept}
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleRejectBookingQR(booking.id)}
+                                      className="flex-1 h-9 text-sm font-semibold"
+                                      variant="destructive"
+                                      size="sm"
+                                    >
+                                      {t.reject}
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleRevertBookingQR(booking.id)}
+                                      className="h-9 w-9 text-sm font-semibold"
+                                      variant="outline"
+                                      size="icon"
+                                      title={language === "ru" ? "Вернуть" : "Revert"}
+                                    >
+                                      <Undo2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </div>
                               )}
 

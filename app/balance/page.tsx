@@ -135,6 +135,11 @@ export default function BalancePage() {
     redCross?: boolean
     showReject?: boolean
     bookingId?: string
+    qrData?: {
+      sum: number
+      recipient: string
+      created_at: string
+    }
   }>({
     scanning: false,
     amount: 0,
@@ -182,29 +187,42 @@ export default function BalancePage() {
 
   const handleCashQRScanned = () => {
     const amount = cashQRState.amount
-    console.log("[v0] Cash QR scanned successfully, amount:", amount, { match: true })
+    console.log("[v0] scan:result", {
+      bookingId: "cash_" + Date.now(),
+      match: true,
+      amount,
+      timestamp: new Date().toISOString(),
+    })
 
-    // Set accept button IMMEDIATELY
+    const mockQRData = {
+      sum: amount,
+      recipient: language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I.",
+      created_at: formatDateTime(new Date(Date.now() - Math.floor(Math.random() * 3600000))),
+    }
+
     setCashQRState({
       scanning: false,
       amount: amount,
       showAcceptButton: true,
+      qrData: mockQRData,
     })
 
-    // Close modal asynchronously after 1.5s
     setTimeout(() => {
       setShowCashReceiveDialog(false)
     }, 1500)
   }
 
   const handleInvalidCashQR = () => {
-    console.log("[v0] Cash QR scan invalid", { match: false, reason: "Invalid QR" })
-    // Keep modal open to show "QR не найден" button
+    console.log("[v0] scan:result", {
+      bookingId: "cash_" + Date.now(),
+      match: false,
+      reason: "Invalid QR",
+      timestamp: new Date().toISOString(),
+    })
   }
 
   const handleCashQRNotFound = () => {
-    console.log("[v0] QR not found button clicked")
-    console.log({ bookingId: "cash_" + Date.now(), match: false, reason: "qr_not_found" })
+    console.log("[v0] qr:not_found_clicked", { bookingId: "cash_" + Date.now(), timestamp: new Date().toISOString() })
 
     setCashQRState({
       scanning: false,
@@ -216,7 +234,6 @@ export default function BalancePage() {
       bookingId: "cash_" + Date.now(),
     })
 
-    // Close the modal
     setShowCashReceiveDialog(false)
 
     toast({
@@ -226,10 +243,13 @@ export default function BalancePage() {
     })
   }
 
-  const handleRejectCashQR = () => {
-    console.log("[v0] Rejecting cash QR operation:", { bookingId: cashQRState.bookingId, action: "reject" })
+  const handleRejectCashReceive = () => {
+    console.log("[v0] reject:clicked", {
+      bookingId: cashQRState.bookingId,
+      action: "reject",
+      timestamp: new Date().toISOString(),
+    })
 
-    // Reset state and optionally open scanner for next booking
     setCashQRState({
       scanning: false,
       amount: 0,
@@ -238,15 +258,17 @@ export default function BalancePage() {
 
     toast({
       title: language === "ru" ? "Операция отклонена" : "Operation rejected",
+      variant: "destructive",
     })
-
-    // Note: In a real app, you might open scanner for next booking here
-    // For now, just reset state
   }
 
   const handleConfirmCashReceive = () => {
     const amount = cashQRState.amount
-    console.log("[v0] Confirming cash receive operation:", amount)
+    console.log("[v0] accept:clicked", {
+      bookingId: cashQRState.bookingId || "cash_" + Date.now(),
+      amount,
+      timestamp: new Date().toISOString(),
+    })
 
     setBalance({
       ...balance,
@@ -361,24 +383,39 @@ export default function BalancePage() {
             <QrCode className="mr-2 h-5 w-5" />
             {t.scanQR}
           </Button>
-        ) : cashQRState.showAcceptButton ? (
-          <div className="flex gap-3">
-            <Button
-              onClick={handleConfirmCashReceive}
-              className="flex-1 h-14 text-base font-semibold"
-              variant="default"
-            >
-              {t.accept}
-            </Button>
-            <Button
-              onClick={handleRevertCashReceive}
-              className="h-14 w-14 text-base font-semibold bg-transparent"
-              variant="outline"
-              size="icon"
-              title={language === "ru" ? "Вернуть" : "Revert"}
-            >
-              <Undo2 className="h-5 w-5" />
-            </Button>
+        ) : cashQRState.showAcceptButton && cashQRState.qrData ? (
+          <div>
+            <div className="mb-3 p-4 rounded-lg bg-secondary border-2 border-border">
+              <p className="text-sm font-semibold text-foreground">
+                {t.sumLabel}: {formatCurrency(cashQRState.qrData.sum)} {balance.currency}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={handleConfirmCashReceive}
+                className="flex-1 h-14 text-base font-semibold"
+                variant="default"
+              >
+                {t.accept}
+              </Button>
+              <Button
+                onClick={handleRejectCashReceive}
+                className="flex-1 h-14 text-base font-semibold"
+                variant="destructive"
+              >
+                {t.reject}
+              </Button>
+              <Button
+                onClick={handleRevertCashReceive}
+                className="h-14 w-14 text-base font-semibold bg-transparent"
+                variant="outline"
+                size="icon"
+                title={language === "ru" ? "Вернуть" : "Revert"}
+              >
+                <Undo2 className="h-5 w-5" />
+              </Button>
+            </div>
           </div>
         ) : cashQRState.showReject ? (
           <Card className="p-4 border-2 border-destructive/50">
@@ -395,7 +432,7 @@ export default function BalancePage() {
                 </div>
               </div>
             </div>
-            <Button onClick={handleRejectCashQR} className="w-full" variant="destructive">
+            <Button onClick={handleRejectCashReceive} className="w-full" variant="destructive">
               {t.reject}
             </Button>
           </Card>
