@@ -66,6 +66,7 @@ interface Booking {
     recipient: string
     created_at: string
   }
+  passengerCount?: number // Added for return handler
 }
 
 interface RouteStop {
@@ -82,6 +83,15 @@ interface QueuePassenger {
   scanned?: boolean
   count: number
   qrError?: string
+  showQRButtons?: boolean // Added this property
+  qrData?: {
+    // Added this property
+    sum: number
+    recipient: string
+    created_at: string
+  }
+  ticketCount: number // Added for reverting seat occupancy
+  orderNumber: number // Added for display in queue section
 }
 
 const tripRoutes = {
@@ -120,7 +130,7 @@ const tripRoutes = {
 export default function DriverDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [showRegister, setShowRegister] = useState(false)
-  const [userStatus, setUserStatus] = useState<"pending" | "approved">("approved")
+  const [userStatus, setUserStatus] = useState<"pending" | "approved" | "confirmed">("pending") // Changed to include confirmed
   const [language, setLanguage] = useState<Language>("ru")
   const t = translations[language]
   const { toast } = useToast()
@@ -129,6 +139,7 @@ export default function DriverDashboard() {
   const [tripId, setTripId] = useState<string>("")
   const [selectedTrip, setSelectedTrip] = useState("")
   const [isDirectionReversed, setIsDirectionReversed] = useState(false)
+  const [isRouteDropdownDisabled, setIsRouteDropdownDisabled] = useState(false)
 
   const [prepareTimer, setPrepareTimer] = useState<number>(600)
 
@@ -187,6 +198,7 @@ export default function DriverDashboard() {
       toStopIndex: 3,
       amount: 320,
       count: 1,
+      passengerCount: 1, // Added
     },
     {
       id: 2,
@@ -197,6 +209,7 @@ export default function DriverDashboard() {
       toStopIndex: 3,
       amount: 320,
       count: 2,
+      passengerCount: 1, // Added
     },
     {
       id: 3,
@@ -207,15 +220,16 @@ export default function DriverDashboard() {
       toStopIndex: 3,
       amount: 180,
       count: 1,
+      passengerCount: 1, // Added
     },
   ])
 
   const [queuePassengers, setQueuePassengers] = useState<QueuePassenger[]>([
-    { id: 1, name: "Петр С.", queuePosition: 1, isFirst: true, count: 1 },
-    { id: 2, name: "Анна М.", queuePosition: 2, isFirst: false, count: 2 },
-    { id: 3, name: "Игорь Л.", queuePosition: 3, isFirst: false, count: 1 },
-    { id: 4, name: "Ольга К.", queuePosition: 4, isFirst: false, count: 3 },
-    { id: 5, name: "Сергей Д.", queuePosition: 5, isFirst: false, count: 1 },
+    { id: 1, name: "Петр С.", queuePosition: 1, isFirst: true, count: 1, ticketCount: 1, orderNumber: 1 },
+    { id: 2, name: "Анна М.", queuePosition: 2, isFirst: false, count: 2, ticketCount: 2, orderNumber: 2 },
+    { id: 3, name: "Игорь Л.", queuePosition: 3, isFirst: false, count: 1, ticketCount: 1, orderNumber: 3 },
+    { id: 4, name: "Ольга К.", queuePosition: 4, isFirst: false, count: 3, ticketCount: 3, orderNumber: 4 },
+    { id: 5, name: "Сергей Д.", queuePosition: 5, isFirst: false, count: 1, ticketCount: 1, orderNumber: 5 },
   ])
 
   const [manualOccupied, setManualOccupied] = useState(0)
@@ -223,6 +237,9 @@ export default function DriverDashboard() {
   const [scanningForQueue, setScanningForQueue] = useState(false)
   const [highlightedBookingId, setHighlightedBookingId] = useState<number | null>(null)
   const [currentQueueScanId, setCurrentQueueScanId] = useState<number | null>(null)
+  const [highlightedPassengerId, setHighlightedPassengerId] = useState<number | null>(null) // Added for queue passengers
+
+  const [isScanningLocked, setIsScanningLocked] = useState(false)
 
   useEffect(() => {
     const savedAuthState = localStorage.getItem("driverAuthenticated")
@@ -231,7 +248,7 @@ export default function DriverDashboard() {
     }
     const savedUserStatus = localStorage.getItem("userStatus")
     if (savedUserStatus) {
-      setUserStatus(savedUserStatus as "pending" | "approved")
+      setUserStatus(savedUserStatus as "pending" | "approved" | "confirmed")
     }
   }, [])
 
@@ -301,6 +318,7 @@ export default function DriverDashboard() {
     setTripId("")
     setIsDirectionReversed(false)
     setTripStatus(STATE.PREP_IDLE)
+    setSelectedTrip("")
   }
 
   const getTripButtonText = () => {
@@ -342,27 +360,108 @@ export default function DriverDashboard() {
     }
   }
 
-  const handleAcceptBooking = (bookingId: number) => {
+  const handleOpenBookingScanner = (bookingId: number) => {
+    if (isScanningLocked) {
+      console.log("[v0] ui:blocked", { action: "openBookingScanner", reason: "scanningInProgress" })
+      return
+    }
+
+    if (userStatus !== "confirmed") {
+      console.log("[v0] ui:blocked", { action: "openBookingScanner", reason: "accountUnconfirmed" })
+      toast({
+        title: t.error,
+        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log("[v0] Opening QR scanner for booking:", bookingId)
+    setIsScanningLocked(true)
+    setTempBookingId(bookingId)
+    setScanningForQueue(false)
+    setCurrentQueueScanId(null)
+    setShowCashQRDialog(true)
+    setTimeout(() => setIsScanningLocked(false), 300)
+  }
+
+  const handleReturnBooking = (bookingId: number) => {
+    console.log("[v0] return:clicked", { bookingId, timestamp: new Date().toISOString() })
+
     const booking = bookings.find((b) => b.id === bookingId)
     if (!booking) return
 
-    if (booking.accepted && !booking.showQRButtons) {
-      console.log("[v0] Opening QR scanner for booking:", bookingId)
-      const mockAmount = booking.amount
-      setCurrentCashAmount(mockAmount)
-      setTempBookingId(bookingId)
-      setScanningForQueue(false)
-      setCurrentQueueScanId(null)
-      setShowCashQRDialog(true)
-    } else {
-      setBookings(bookings.map((b) => (b.id === bookingId ? { ...b, accepted: true, qrError: undefined } : b)))
+    // Revert the booking status
+    setBookings(
+      bookings.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              showQRButtons: false,
+              qrData: undefined,
+              accepted: false,
+            }
+          : b,
+      ),
+    )
 
-      toast({
-        title: language === "ru" ? "Успешно" : language === "fr" ? "Succès" : language === "ar" ? "نجاح" : "Success",
-        description:
-          language === "ru" ? "Бронь принята. Теперь можно сканировать QR." : "Booking accepted. Now scan QR.",
-      })
-    }
+    const seatCountToRevert = booking.passengerCount || 1
+    setManualOccupied((prev) => Math.max(0, prev - seatCountToRevert))
+
+    console.log("[v0] return:success", {
+      bookingId,
+      seatCountReverted: seatCountToRevert,
+      timestamp: new Date().toISOString(),
+    })
+
+    toast({
+      title: language === "ru" ? "Возврат" : "Return",
+      description: language === "ru" ? "Операция отменена" : "Operation canceled",
+    })
+  }
+
+  const handleReturnQueuePassenger = (passengerId: number) => {
+    console.log("[v0] return:clicked", { passengerId, timestamp: new Date().toISOString() })
+
+    const passenger = queuePassengers.find((p) => p.id === passengerId)
+    if (!passenger) return
+
+    // Revert the passenger status
+    setQueuePassengers(
+      queuePassengers.map((p) =>
+        p.id === passengerId
+          ? {
+              ...p,
+              showQRButtons: false,
+              qrData: undefined,
+              accepted: false,
+            }
+          : p,
+      ),
+    )
+
+    const seatCountToRevert = passenger.ticketCount || 1
+    setManualOccupied((prev) => Math.max(0, prev - seatCountToRevert))
+
+    console.log("[v0] return:success", {
+      passengerId,
+      seatCountReverted: seatCountToRevert,
+      timestamp: new Date().toISOString(),
+    })
+
+    toast({
+      title: language === "ru" ? "Возврат" : "Return",
+      description: language === "ru" ? "Операция отменена" : "Operation canceled",
+    })
+  }
+
+  const handleAcceptBooking = (bookingId: number) => {
+    console.log("[v0] accept:clicked", {
+      bookingId,
+      amount: bookings.find((b) => b.id === bookingId)?.amount,
+      timestamp: new Date().toISOString(),
+    })
+    handleOpenBookingScanner(bookingId)
   }
 
   const handleAcceptBookingQR = (bookingId: number) => {
@@ -429,6 +528,37 @@ export default function DriverDashboard() {
     setBookings(bookings.map((b) => (b.id === bookingId ? { ...b, showQRButtons: false, qrData: undefined } : b)))
   }
 
+  const handleRevertPassengerQR = (passengerId: number) => {
+    console.log("[v0] Reverting passenger QR:", passengerId)
+    const passenger = queuePassengers.find((p) => p.id === passengerId)
+    if (!passenger) return
+
+    // Revert seat occupancy
+    const seatsToFree = passenger.ticketCount
+    setSeats((prevSeats) => {
+      const occupiedSeats = prevSeats.filter((s) => s.status === "occupied" && s.passengerName === passenger.name)
+      const seatsToUpdate = occupiedSeats.slice(0, seatsToFree)
+      return prevSeats.map((seat) =>
+        seatsToUpdate.find((s) => s.id === seat.id)
+          ? {
+              ...seat,
+              status: "free" as const,
+              passengerName: undefined,
+              fromStop: undefined,
+              toStop: undefined,
+              paymentMethod: undefined,
+              amountPaid: undefined,
+            }
+          : seat,
+      )
+    })
+
+    // Reset passenger state
+    setQueuePassengers(
+      queuePassengers.map((p) => (p.id === passengerId ? { ...p, showQRButtons: false, qrData: undefined } : p)),
+    )
+  }
+
   const handleConfirmQR = () => {
     if (tempBookingId !== null && tempBookingId !== undefined) {
       const booking = bookings.find((b) => b.id === tempBookingId)
@@ -449,7 +579,7 @@ export default function DriverDashboard() {
 
       setBookings(
         bookings.map((b) =>
-          b.id === booking.id
+          b.id === tempBookingId
             ? {
                 ...b,
                 showQRButtons: true,
@@ -460,13 +590,10 @@ export default function DriverDashboard() {
         ),
       )
 
-      toast({
-        title: language === "ru" ? "QR отсканирован" : "QR scanned",
-        description: language === "ru" ? "Нажмите Принять или Отклонить" : "Press Accept or Reject",
-      })
-
-      setTempBookingId(null)
-      setHighlightedBookingId(null)
+      setTimeout(() => {
+        setShowCashQRDialog(false)
+        setIsScanningLocked(false)
+      }, 1500)
     } else if (scanningForQueue || currentQueueScanId !== null) {
       const passenger = queuePassengers.find((p) => p.id === currentQueueScanId)
       if (!passenger) return
@@ -477,159 +604,94 @@ export default function DriverDashboard() {
         timestamp: new Date().toISOString(),
       })
 
-      setQueuePassengers(queuePassengers.map((p) => (p.id === currentQueueScanId ? { ...p, scanned: true } : p)))
-
-      const mockRecipient = language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I."
-      const mockCreatedAt = formatDateTime(new Date(Date.now() - Math.floor(Math.random() * 3600000)))
-      const mockAmount = currentCashAmount
-
-      setQrScannedData({
-        amount: mockAmount,
-        recipient: mockRecipient,
-        createdAt: mockCreatedAt,
-        scannedPassengerId: currentQueueScanId,
-      })
-
-      toast({
-        title: language === "ru" ? "QR отсканирован" : "QR scanned",
-        description: `${passenger.name}`,
-      })
-
-      setCurrentQueueScanId(null)
-      setScanningForQueue(false)
-    }
-  }
-
-  const handleInvalidQR = () => {
-    if (tempBookingId !== null && tempBookingId !== undefined) {
-      console.log("[v0] scan:result", {
-        bookingId: tempBookingId,
-        match: false,
-        reason: "QR mismatch",
-        timestamp: new Date().toISOString(),
-      })
-    } else if (scanningForQueue || currentQueueScanId !== null) {
-      console.log("[v0] scan:result", {
-        passengerId: currentQueueScanId,
-        match: false,
-        reason: "QR mismatch",
-        timestamp: new Date().toISOString(),
-      })
-    }
-  }
-
-  const handleQRNotFoundForBooking = () => {
-    if (tempBookingId === null && currentQueueScanId === null) return
-
-    if (tempBookingId !== null) {
-      console.log("[v0] qr:not_found_clicked", { bookingId: tempBookingId, timestamp: new Date().toISOString() })
-      const mismatchType = language === "ru" ? "QR не найден" : "QR not found"
-
-      const currentBooking = bookings.find((b) => b.id === tempBookingId)
-      if (!currentBooking) return
-
-      setBookings(
-        bookings.map((b) =>
-          b.id === tempBookingId
-            ? {
-                ...b,
-                qrError: mismatchType,
-                showQRButtons: false,
-              }
-            : b,
-        ),
-      )
-
-      // Find next available booking at same stop but don't auto-scan
-      const stopBookings = bookings.filter(
-        (b) => b.fromStopIndex === currentBooking.fromStopIndex && b.id !== tempBookingId && !b.accepted && !b.qrError,
-      )
-
-      if (stopBookings.length > 0) {
-        const nextBooking = stopBookings[0]
-        setHighlightedBookingId(nextBooking.id)
-        console.log("[v0] Highlighting next booking:", nextBooking.id)
-
-        toast({
-          title: language === "ru" ? "QR не найден" : "QR not found",
-          description:
-            language === "ru"
-              ? `Следующая бронь: ${nextBooking.passengerName}`
-              : `Next booking: ${nextBooking.passengerName}`,
-          variant: "destructive",
-        })
-      } else {
-        toast({
-          title: language === "ru" ? "QR не найден" : "QR not found",
-          description: language === "ru" ? "Нет других бронирований" : "No other bookings",
-          variant: "destructive",
-        })
+      const mockQRData = {
+        sum: passenger.ticketCount * 320,
+        recipient: language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I.",
+        created_at: formatDateTime(new Date(Date.now() - Math.floor(Math.random() * 3600000))),
       }
-
-      // Close modal and clear temp state
-      setShowCashQRDialog(false)
-      setTempBookingId(null)
-    } else if (currentQueueScanId !== null) {
-      console.log("[v0] qr:not_found_clicked", { passengerId: currentQueueScanId, timestamp: new Date().toISOString() })
-
-      const currentPassenger = queuePassengers.find((p) => p.id === currentQueueScanId)
-      if (!currentPassenger) return
 
       setQueuePassengers(
         queuePassengers.map((p) =>
           p.id === currentQueueScanId
             ? {
                 ...p,
-                qrError: language === "ru" ? "QR не найден" : "QR not found",
+                showQRButtons: true,
+                qrData: mockQRData,
+                qrError: undefined,
               }
             : p,
         ),
       )
 
-      toast({
-        title: language === "ru" ? "QR не найден" : "QR not found",
-        description: `${currentPassenger.name}`,
-        variant: "destructive",
-      })
-
-      // Close modal and clear temp state
-      setShowCashQRDialog(false)
-      setCurrentQueueScanId(null)
-      setScanningForQueue(false)
+      setTimeout(() => {
+        setShowCashQRDialog(false)
+        setIsScanningLocked(false)
+      }, 1500)
     }
   }
 
-  const handleScanQueueQR = () => {
-    console.log("[v0] Opening QR scanner for queue")
-
-    const firstUnscannedPassenger = queuePassengers.find((p) => !p.scanned && !(p as any).qrError)
-    if (!firstUnscannedPassenger) {
-      toast({
-        title: language === "ru" ? "Очередь пуста" : "Queue empty",
-        description: language === "ru" ? "Все пассажиры обработаны" : "All processed",
-      })
-      return
-    }
-
-    const mockAmount = 300 + Math.floor(Math.random() * 200)
-    setCurrentCashAmount(mockAmount)
-    setCurrentQueueScanId(firstUnscannedPassenger.id)
-    setScanningForQueue(true)
-    setTempBookingId(null)
-    setShowCashQRDialog(true)
+  const handleInvalidQR = () => {
+    console.log("[v0] scan:error", {
+      bookingId: tempBookingId || currentQueueScanId,
+      error: "Invalid QR",
+      timestamp: new Date().toISOString(),
+    })
+    // Added feedback for invalid QR
+    toast({
+      title: t.scanError,
+      description: t.invalidQR,
+      variant: "destructive",
+    })
   }
 
-  const handleAcceptQueueQR = (passengerId: number) => {
-    const passenger = queuePassengers.find((p) => p.id === passengerId)
-    if (!passenger) return
-
-    console.log("[v0] accept:clicked", {
-      passengerId: passengerId,
-      count: passenger.count,
+  const handleQRNotFoundForBooking = () => {
+    console.log("[v0] qr:not_found_clicked", {
+      bookingId: tempBookingId || currentQueueScanId,
       timestamp: new Date().toISOString(),
     })
 
-    const passengerCount = passenger.count || 1
+    if (tempBookingId !== null && tempBookingId !== undefined) {
+      setBookings(
+        bookings.map((b) =>
+          b.id === tempBookingId
+            ? {
+                ...b,
+                qrError: true,
+                showRejectButton: true,
+              }
+            : b,
+        ),
+      )
+    } else if (currentQueueScanId !== null) {
+      setQueuePassengers(
+        queuePassengers.map((p) =>
+          p.id === currentQueueScanId
+            ? {
+                ...p,
+                qrError: true,
+                showRejectButton: true,
+              }
+            : p,
+        ),
+      )
+    }
+
+    setShowCashQRDialog(false)
+    setIsScanningLocked(false)
+  }
+
+  // Added accept/reject for queue passengers after QR scan
+  const handleAcceptQueueQR = (passengerId: number) => {
+    const passenger = queuePassengers.find((p) => p.id === passengerId)
+    if (!passenger || !passenger.qrData) return
+
+    console.log("[v0] accept:clicked", {
+      passengerId: passengerId,
+      count: passenger.ticketCount,
+      timestamp: new Date().toISOString(),
+    })
+
+    const passengerCount = passenger.ticketCount || 1
     let seatsToOccupy = passengerCount
     const updatedSeats = [...seats]
 
@@ -640,6 +702,8 @@ export default function DriverDashboard() {
           status: "occupied",
           passengerName: passenger.name,
           paymentMethod: "qr",
+          fromStop: stops.findIndex((s) => s.id === 0), // Assuming start stop for queue passengers
+          toStop: stops.length - 1, // Assuming end stop for queue passengers
         }
         seatsToOccupy--
       }
@@ -647,7 +711,7 @@ export default function DriverDashboard() {
 
     setSeats(updatedSeats)
     setQueuePassengers(queuePassengers.filter((p) => p.id !== passengerId))
-    setQrScannedData(null)
+    setQrScannedData(null) // Clear scanned data
 
     toast({
       title: language === "ru" ? "Пассажир принят" : "Passenger accepted",
@@ -655,6 +719,7 @@ export default function DriverDashboard() {
     })
   }
 
+  // Added reject for queue passengers after QR scan
   const handleRejectQueueQR = (passengerId: number) => {
     const passenger = queuePassengers.find((p) => p.id === passengerId)
     if (!passenger) return
@@ -687,9 +752,10 @@ export default function DriverDashboard() {
     localStorage.removeItem("driverAuthenticated")
     localStorage.removeItem("userStatus")
     setIsAuthenticated(false)
-    setUserStatus("approved") // Reset to default
+    setUserStatus("pending") // Reset to default
     setTripStatus(STATE.PREP_IDLE)
     setTripId("")
+    setSelectedTrip("")
   }
 
   const handleToggleDirection = () => {
@@ -781,6 +847,11 @@ export default function DriverDashboard() {
     }
   }
 
+  const handleSelectTrip = (value: string) => {
+    setSelectedTrip(value)
+    setIsDirectionReversed(false)
+  }
+
   useEffect(() => {
     if (!selectedTrip) return
     const currentRoute = tripRoutes[selectedTrip as keyof typeof tripRoutes]
@@ -794,17 +865,68 @@ export default function DriverDashboard() {
     setManualOccupied(actualOccupied)
   }, [seats])
 
+  const handleScanQueueQR = () => {
+    if (isScanningLocked) {
+      console.log("[v0] ui:blocked", { action: "openQueueScanner", reason: "scanningInProgress" })
+      return
+    }
+
+    if (userStatus !== "confirmed") {
+      console.log("[v0] ui:blocked", { action: "openQueueScanner", reason: "accountUnconfirmed" })
+      toast({
+        title: t.error,
+        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsScanningLocked(true)
+    setScanningForQueue(true)
+    setCurrentQueueScanId(null)
+    setTempBookingId(null)
+    setShowCashQRDialog(true)
+
+    setTimeout(() => setIsScanningLocked(false), 300)
+  }
+
+  const handleOpenPassengerScanner = (passengerId: number) => {
+    if (isScanningLocked) {
+      console.log("[v0] ui:blocked", { action: "openPassengerScanner", reason: "scanningInProgress" })
+      return
+    }
+
+    if (userStatus !== "confirmed") {
+      console.log("[v0] ui:blocked", { action: "openPassengerScanner", reason: "accountUnconfirmed" })
+      toast({
+        title: t.error,
+        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log("[v0] Opening QR scanner for passenger:", passengerId)
+    setIsScanningLocked(true)
+    setCurrentQueueScanId(passengerId)
+    setScanningForQueue(true)
+    setTempBookingId(null)
+    setShowCashQRDialog(true)
+
+    setTimeout(() => setIsScanningLocked(false), 300)
+  }
+
   if (!isAuthenticated) {
     if (showRegister) {
       return (
         <RegisterForm
           onRegister={() => {
-            const isTestUser = false // Mock: new users are pending by default
-            setUserStatus(isTestUser ? "approved" : "pending")
+            // Mock: new users are pending by default
+            setUserStatus("pending")
             setShowRegister(false)
             setIsAuthenticated(true)
             localStorage.setItem("driverAuthenticated", "true")
-            localStorage.setItem("userStatus", isTestUser ? "approved" : "pending")
+            localStorage.setItem("userStatus", "pending")
           }}
           onBackToLogin={() => setShowRegister(false)}
           language={language}
@@ -818,8 +940,8 @@ export default function DriverDashboard() {
           setIsAuthenticated(true)
           localStorage.setItem("driverAuthenticated", "true")
           // Test account is always approved
-          setUserStatus("approved")
-          localStorage.setItem("userStatus", "approved")
+          setUserStatus("confirmed")
+          localStorage.setItem("userStatus", "confirmed")
         }}
         onRegister={() => setShowRegister(true)}
         language={language}
@@ -849,25 +971,16 @@ export default function DriverDashboard() {
       .map((_, i) => <User key={i} className="h-4 w-4" />)
   }
 
-  const isRouteDropdownDisabled = tripStatus !== STATE.PREP_IDLE
-  const showToggleDirection = tripStatus === STATE.PREP_IDLE && selectedTrip
+  const isPanelsDisabled = tripStatus === STATE.PREP_IDLE || userStatus !== "confirmed"
 
-  const isPanelsDisabled = tripStatus !== STATE.PREP_IDLE && !selectedTrip
-  const showMainButton = selectedTrip || tripStatus === STATE.PREP_IDLE
+  const canStartTrip = selectedTrip !== "" && tripStatus === STATE.PREP_IDLE && userStatus === "confirmed"
 
   return (
     <div className="min-h-screen bg-background pb-6">
       <div className="bg-card border-b border-border px-4 py-4 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 flex-1">
-            <Select
-              value={selectedTrip}
-              onValueChange={(value) => {
-                setSelectedTrip(value)
-                setIsDirectionReversed(false)
-              }}
-              disabled={isRouteDropdownDisabled}
-            >
+            <Select value={selectedTrip} onValueChange={handleSelectTrip} disabled={tripStatus !== STATE.PREP_IDLE}>
               <SelectTrigger
                 className={`${isRouteDropdownDisabled || (selectedTrip && tripStatus === STATE.PREP_IDLE) ? "w-auto min-w-40 max-w-full" : "w-auto min-w-48 max-w-full"} h-auto min-h-10 ${
                   isRouteDropdownDisabled ? "opacity-50 cursor-not-allowed" : ""
@@ -892,15 +1005,9 @@ export default function DriverDashboard() {
               </SelectContent>
             </Select>
 
-            {showToggleDirection && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleToggleDirection}
-                className="h-10 w-10 flex-shrink-0 bg-transparent"
-                title={language === "ru" ? "Изменить направление" : "Toggle direction"}
-              >
-                <ArrowLeftRight className="h-5 w-5" />
+            {selectedTrip && tripStatus === STATE.PREP_IDLE && (
+              <Button variant="outline" size="icon" onClick={handleToggleDirection}>
+                <ArrowLeftRight className="h-4 w-4" />
               </Button>
             )}
           </div>
@@ -928,20 +1035,61 @@ export default function DriverDashboard() {
           </div>
         )}
 
-        {userStatus === "approved" && showMainButton && tripStatus !== STATE.IN_ROUTE && (
+        {userStatus === "pending" && (
+          <Card className="p-6 border-2 border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-900/10">
+            <div className="flex items-start gap-4">
+              <div className="text-4xl">⏳</div>
+              <div className="flex-1 space-y-3">
+                <h3 className="font-semibold text-lg">
+                  {language === "ru"
+                    ? "Ожидание подтверждения администратора"
+                    : language === "fr"
+                      ? "En attente de confirmation de l'administrateur"
+                      : language === "ar"
+                        ? "في انتظار تأكيد المسؤول"
+                        : "Awaiting Admin Confirmation"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {language === "ru"
+                    ? "Вы зарегистрированы, ждите подтверждения ваших данных администратором. Обычно это занимает 1 рабочий день."
+                    : language === "fr"
+                      ? "Vous êtes enregistré, veuillez attendre la confirmation de vos données par l'administrateur. Cela prend généralement 1 jour ouvrable."
+                      : language === "ar"
+                        ? "أنت مسجل، يرجى انتظار تأكيد بياناتك من قبل المسؤول. عادة ما يستغرق ذلك يوم عمل واحد."
+                        : "You are registered, please wait for confirmation of your data by the administrator. This usually takes 1 business day."}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    // Mock status refresh
+                    toast({
+                      title: language === "ru" ? "Статус проверен" : "Status checked",
+                      description: language === "ru" ? "Ожидание подтверждения" : "Awaiting confirmation",
+                    })
+                  }}
+                >
+                  🔄 {language === "ru" ? "Обновить статус" : "Refresh Status"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {userStatus === "confirmed" && tripStatus !== STATE.IN_ROUTE && (
           <Button
             onClick={handleTripButton}
             size="lg"
             className="w-full h-14 text-lg font-semibold"
             variant="default"
-            disabled={!selectedTrip}
+            disabled={!canStartTrip} // Use canStartTrip
           >
             {tripStatus === STATE.PREP_IDLE && <PlayCircle className="mr-2 h-6 w-6" />}
             {getTripButtonText()}
           </Button>
         )}
 
-        {userStatus === "approved" && tripStatus === STATE.IN_ROUTE && (
+        {userStatus === "confirmed" && tripStatus === STATE.IN_ROUTE && (
           <Button onClick={clickFinish} size="lg" className="w-full h-14 text-lg font-semibold" variant="destructive">
             <StopCircle className="mr-2 h-6 w-6" />
             {t.finishTrip}
@@ -1021,129 +1169,130 @@ export default function DriverDashboard() {
           </div>
         </Card>
 
-        {userStatus === "approved" && tripStatus !== STATE.IN_ROUTE && (
-          <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
-              </div>
-              <Badge variant="secondary" className="text-lg px-3 py-1">
-                {queuePassengers.length}
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              {queuePassengers.slice(0, 4).map((passenger) => (
-                <div
-                  key={passenger.id}
-                  className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 ${
-                    (passenger as any).qrError
-                      ? "bg-red-100 border-red-500 dark:bg-red-900/30 dark:border-red-600"
-                      : passenger.scanned
-                        ? "bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600"
-                        : passenger.isFirst
-                          ? "bg-primary/10 border-primary"
-                          : "bg-secondary border-border"
-                  }`}
-                >
-                  {(passenger as any).qrError && (
-                    <Button
-                      onClick={() => handleRejectQueuePassenger(passenger.id)}
-                      size="icon"
-                      variant="ghost"
-                      className="h-5 w-5 p-0 mb-1"
-                      title={t.reject}
-                    >
-                      <X className="h-4 w-4 text-red-500" />
-                    </Button>
-                  )}
-                  {!(passenger as any).qrError && (
-                    <div className="flex items-center gap-0.5 mb-1">{renderPassengerIcons(passenger.count)}</div>
-                  )}
-                  <span className="text-xs font-bold">
-                    {passenger.queuePosition} • {passenger.count}
-                  </span>
+        {userStatus === "confirmed" &&
+          tripStatus !== STATE.IN_ROUTE && ( // Changed condition to userStatus === "confirmed"
+            <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
                 </div>
-              ))}
-              {queuePassengers.length >= 5 && (
-                <div
-                  key={queuePassengers[4].id}
-                  className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 border-dashed ${
-                    (queuePassengers[4] as any).qrError
-                      ? "bg-red-100 border-red-500 dark:bg-red-900/30 dark:border-red-600"
-                      : queuePassengers[4].scanned
-                        ? "bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600"
-                        : "bg-secondary border-border"
-                  }`}
-                >
-                  {(queuePassengers[4] as any).qrError && (
+                <Badge variant="secondary" className="text-lg px-3 py-1">
+                  {queuePassengers.length}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-5 gap-2 mb-4">
+                {queuePassengers.slice(0, 4).map((passenger) => (
+                  <div
+                    key={passenger.id}
+                    className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 ${
+                      (passenger as any).qrError
+                        ? "bg-red-100 border-red-500 dark:bg-red-900/30 dark:border-red-600"
+                        : passenger.scanned
+                          ? "bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600"
+                          : passenger.isFirst
+                            ? "bg-primary/10 border-primary"
+                            : "bg-secondary border-border"
+                    }`}
+                  >
+                    {(passenger as any).qrError && (
+                      <Button
+                        onClick={() => handleRejectQueuePassenger(passenger.id)}
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5 p-0 mb-1"
+                        title={t.reject}
+                      >
+                        <X className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
+                    {!(passenger as any).qrError && (
+                      <div className="flex items-center gap-0.5 mb-1">{renderPassengerIcons(passenger.count)}</div>
+                    )}
+                    <span className="text-xs font-bold">
+                      {passenger.queuePosition} • {passenger.count}
+                    </span>
+                  </div>
+                ))}
+                {queuePassengers.length >= 5 && (
+                  <div
+                    key={queuePassengers[4].id}
+                    className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 border-dashed ${
+                      (queuePassengers[4] as any).qrError
+                        ? "bg-red-100 border-red-500 dark:bg-red-900/30 dark:border-red-600"
+                        : queuePassengers[4].scanned
+                          ? "bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600"
+                          : "bg-secondary border-border"
+                    }`}
+                  >
+                    {(queuePassengers[4] as any).qrError && (
+                      <Button
+                        onClick={() => handleRejectQueuePassenger(queuePassengers[4].id)}
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5 p-0 mb-1"
+                        title={t.reject}
+                      >
+                        <X className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
+                    {!(queuePassengers[4] as any).qrError && (
+                      <div className="flex items-center gap-0.5 mb-1">
+                        {renderPassengerIcons(queuePassengers[4].count)}
+                      </div>
+                    )}
+                    <span className="text-xs font-bold">
+                      {queuePassengers[4].queuePosition} • {queuePassengers[4].count}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {qrScannedData && (
+                <div>
+                  <div className="mb-3 p-3 rounded-lg bg-secondary border border-border">
+                    <p className="text-sm font-semibold text-foreground">
+                      {t.sumLabel}: {formatCurrency(qrScannedData.amount)} RUB
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
                     <Button
-                      onClick={() => handleRejectQueuePassenger(queuePassengers[4].id)}
-                      size="icon"
-                      variant="ghost"
-                      className="h-5 w-5 p-0 mb-1"
-                      title={t.reject}
+                      onClick={() => handleAcceptQueueQR(qrScannedData.scannedPassengerId!)}
+                      className="flex-1 h-12"
+                      variant="default"
                     >
-                      <X className="h-4 w-4 text-red-500" />
+                      {t.accept}
                     </Button>
-                  )}
-                  {!(queuePassengers[4] as any).qrError && (
-                    <div className="flex items-center gap-0.5 mb-1">
-                      {renderPassengerIcons(queuePassengers[4].count)}
-                    </div>
-                  )}
-                  <span className="text-xs font-bold">
-                    {queuePassengers[4].queuePosition} • {queuePassengers[4].count}
-                  </span>
+                    <Button
+                      onClick={() => handleRejectQueueQR(qrScannedData.scannedPassengerId!)}
+                      className="flex-1 h-12"
+                      variant="destructive"
+                    >
+                      {t.reject}
+                    </Button>
+                    <Button
+                      onClick={() => setQrScannedData(null)}
+                      className="h-12 w-12"
+                      variant="outline"
+                      size="icon"
+                      title={language === "ru" ? "Вернуть" : "Revert"}
+                    >
+                      <Undo2 className="h-5 w-5" />
+                    </Button>
+                  </div>
                 </div>
               )}
-            </div>
 
-            {qrScannedData && (
-              <div>
-                <div className="mb-3 p-3 rounded-lg bg-secondary border border-border">
-                  <p className="text-sm font-semibold text-foreground">
-                    {t.sumLabel}: {formatCurrency(qrScannedData.amount)} RUB
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleAcceptQueueQR(qrScannedData.scannedPassengerId!)}
-                    className="flex-1 h-12"
-                    variant="default"
-                  >
-                    {t.accept}
-                  </Button>
-                  <Button
-                    onClick={() => handleRejectQueueQR(qrScannedData.scannedPassengerId!)}
-                    className="flex-1 h-12"
-                    variant="destructive"
-                  >
-                    {t.reject}
-                  </Button>
-                  <Button
-                    onClick={() => setQrScannedData(null)}
-                    className="h-12 w-12"
-                    variant="outline"
-                    size="icon"
-                    title={language === "ru" ? "Вернуть" : "Revert"}
-                  >
-                    <Undo2 className="h-5 w-5" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {!qrScannedData && (
-              <Button onClick={handleScanQueueQR} className="w-full h-12" variant="default">
-                <QrCode className="mr-2 h-5 w-5" />
-                {t.scanQR}
-              </Button>
-            )}
-          </Card>
-        )}
+              {!qrScannedData && (
+                <Button onClick={handleScanQueueQR} className="w-full h-12" variant="default">
+                  <QrCode className="mr-2 h-5 w-5" />
+                  {t.scanQR}
+                </Button>
+              )}
+            </Card>
+          )}
 
         <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
           <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>

@@ -44,6 +44,11 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
   const languageOptions = [
     { code: "fr" as Language, name: "Français", flag: "🇫🇷" },
     { code: "ar" as Language, name: "العربية", flag: "🇸🇦" },
+    { code: "darija-ar" as Language, name: "الدارجة (عربي)", flag: "🇲🇦" },
+    { code: "darija-latin" as Language, name: "Darija (Latin)", flag: "🇲🇦" },
+    { code: "amazigh-ar" as Language, name: "ⴰⵎⴰⵣⵉⵖ (عربي)", flag: "🇲🇦" },
+    { code: "amazigh-latin" as Language, name: "Tamazight (Latin)", flag: "🇲🇦" },
+    { code: "es" as Language, name: "Español", flag: "🇪🇸" },
     { code: "en" as Language, name: "English", flag: "🇬🇧" },
     { code: "ru" as Language, name: "Русский", flag: "🇷🇺" },
   ]
@@ -53,12 +58,12 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
       <Card className="w-full max-w-md p-6">
         <div className="flex justify-end mb-2">
           <Select value={language} onValueChange={(value) => onLanguageChange(value as Language)}>
-            <SelectTrigger className="w-[180px] border-2 border-primary/20">
+            <SelectTrigger className="w-[200px] border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors">
               <SelectValue>
                 <div className="flex items-center gap-2">
-                  <Languages className="h-4 w-4" />
-                  <span>{languageOptions.find((l) => l.code === language)?.flag}</span>
-                  <span>{languageOptions.find((l) => l.code === language)?.name}</span>
+                  <Languages className="h-4 w-4 text-primary" />
+                  <span className="text-lg">{languageOptions.find((l) => l.code === language)?.flag}</span>
+                  <span className="font-medium">{languageOptions.find((l) => l.code === language)?.name}</span>
                 </div>
               </SelectValue>
             </SelectTrigger>
@@ -66,8 +71,8 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
               {languageOptions.map((lang) => (
                 <SelectItem key={lang.code} value={lang.code}>
                   <div className="flex items-center gap-2">
-                    <span>{lang.flag}</span>
-                    <span>{lang.name}</span>
+                    <span className="text-lg">{lang.flag}</span>
+                    <span className="font-medium">{lang.name}</span>
                   </div>
                 </SelectItem>
               ))}
@@ -134,7 +139,17 @@ export function LoginForm({ onLogin, onRegister, language, onLanguageChange }: L
                 ? "Pas de compte ? S'inscrire"
                 : language === "ar"
                   ? "لا يوجد حساب؟ سجل"
-                  : "No account? Register"}
+                  : language === "darija-ar"
+                    ? "لا تملك حساب؟ تسجيل"
+                    : language === "darija-latin"
+                      ? "Mochet compte ? Tseggel"
+                      : language === "amazigh-ar"
+                        ? "لا تملك حساب؟ تسجيل"
+                        : language === "amazigh-latin"
+                          ? "Mochet compte ? Tseggel"
+                          : language === "es"
+                            ? "¿No tienes cuenta? Regístrate"
+                            : "No account? Register"}
           </Button>
         </div>
 

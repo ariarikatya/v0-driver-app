@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ArrowLeft, Wallet, QrCode, ChevronDown, Undo2, X } from "lucide-react"
+import { ArrowLeft, Wallet, QrCode, ChevronDown, X } from "lucide-react"
 import Link from "next/link"
 import { translations, type Language } from "@/lib/translations"
 import { formatCurrency, formatDateTime } from "@/lib/utils"
@@ -20,11 +20,12 @@ import { CashQRDialog } from "@/components/cash-qr-dialog"
 
 interface Transaction {
   id: number
-  type: "booking" | "boarding" | "client"
+  type: "booking" | "boarding" | "client" | "income"
   amount: number
   passengerName: string
   timestamp: Date
   paymentMethod: "cash" | "qr"
+  description?: string
   expanded?: boolean
 }
 
@@ -40,13 +41,7 @@ export default function BalancePage() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("today")
   const [paymentFilters, setPaymentFilters] = useState<PaymentFilter[]>(["qr", "cash"])
 
-  const [balance, setBalance] = useState({
-    current: 12450,
-    reserved: 1200,
-    dailyIncome: 3250,
-    weeklyIncome: 18700,
-    currency: "RUB",
-  })
+  const [balance, setBalance] = useState<number>(12450)
 
   const [transactions, setTransactions] = useState<Transaction[]>([
     {
@@ -83,7 +78,7 @@ export default function BalancePage() {
     },
   ])
 
-  const available = balance.current - balance.reserved
+  const available = balance
 
   const cycleLanguage = () => {
     const languages: Language[] = ["ru", "en", "fr", "ar"]
@@ -95,6 +90,7 @@ export default function BalancePage() {
   const getTransactionTypeLabel = (type: string) => {
     if (type === "booking") return t.booking
     if (type === "boarding") return t.boarding
+    if (type === "income") return t.income
     return t.client
   }
 
@@ -110,7 +106,9 @@ export default function BalancePage() {
   const togglePaymentFilter = (filter: PaymentFilter) => {
     setPaymentFilters((prev) => {
       if (prev.includes(filter)) {
-        return prev.filter((f) => f !== filter)
+        const newFilters = prev.filter((f) => f !== filter)
+        // If no filters selected, show all
+        return newFilters.length === 0 ? ["qr", "cash"] : newFilters
       } else {
         return [...prev, filter]
       }
@@ -119,7 +117,8 @@ export default function BalancePage() {
 
   const filteredTransactions = transactions.filter((t) => {
     const matchesPeriod = true
-    const matchesPayment = paymentFilters.length === 0 || paymentFilters.includes(t.paymentMethod)
+    // If both selected or none selected, show all
+    const matchesPayment = paymentFilters.length === 2 || paymentFilters.includes(t.paymentMethod)
     return matchesPeriod && matchesPayment
   })
 
@@ -221,35 +220,46 @@ export default function BalancePage() {
     })
   }
 
-  const handleCashQRNotFound = () => {
-    console.log("[v0] qr:not_found_clicked", { bookingId: "cash_" + Date.now(), timestamp: new Date().toISOString() })
-
-    setCashQRState({
-      scanning: false,
+  const handleAcceptCashQR = () => {
+    console.log("[v0] accept:clicked", {
+      bookingId: cashQRState.bookingId || "cash_" + Date.now(),
       amount: cashQRState.amount,
-      showAcceptButton: false,
-      qrError: language === "ru" ? "QR не найден" : "QR not found",
-      redCross: true,
-      showReject: true,
-      bookingId: "cash_" + Date.now(),
+      timestamp: new Date().toISOString(),
     })
 
-    setShowCashReceiveDialog(false)
+    const newTransaction: Transaction = {
+      id: Date.now(),
+      type: "income",
+      amount: cashQRState.amount,
+      description: language === "ru" ? "Приём наличных" : "Cash received",
+      timestamp: new Date(),
+      paymentMethod: "qr",
+    }
+
+    setTransactions([newTransaction, ...transactions])
+    setBalance(balance + cashQRState.amount)
+
+    // Reset state
+    setCashQRState({
+      scanning: false,
+      amount: 0,
+      showAcceptButton: false,
+    })
 
     toast({
-      title: language === "ru" ? "QR не найден" : "QR not found",
-      description: language === "ru" ? "Помечено красным крестом" : "Marked with red cross",
-      variant: "destructive",
+      title: language === "ru" ? "Успешно" : "Success",
+      description: `${formatCurrency(cashQRState.amount)} ${language === "ru" ? "принято" : "accepted"}`,
     })
   }
 
-  const handleRejectCashReceive = () => {
+  const handleRejectCashQR = () => {
     console.log("[v0] reject:clicked", {
-      bookingId: cashQRState.bookingId,
+      bookingId: cashQRState.bookingId || "cash_" + Date.now(),
       action: "reject",
       timestamp: new Date().toISOString(),
     })
 
+    // Reset state
     setCashQRState({
       scanning: false,
       amount: 0,
@@ -257,46 +267,9 @@ export default function BalancePage() {
     })
 
     toast({
-      title: language === "ru" ? "Операция отклонена" : "Operation rejected",
+      title: language === "ru" ? "Отклонено" : "Rejected",
+      description: language === "ru" ? "Операция отклонена" : "Operation rejected",
       variant: "destructive",
-    })
-  }
-
-  const handleConfirmCashReceive = () => {
-    const amount = cashQRState.amount
-    console.log("[v0] accept:clicked", {
-      bookingId: cashQRState.bookingId || "cash_" + Date.now(),
-      amount,
-      timestamp: new Date().toISOString(),
-    })
-
-    setBalance({
-      ...balance,
-      current: balance.current + amount,
-    })
-
-    const newTransaction: Transaction = {
-      id: transactions.length + 1,
-      type: "client",
-      amount: amount,
-      passengerName: language === "ru" ? "Клиент (наличные)" : "Client (cash)",
-      timestamp: new Date(),
-      paymentMethod: "cash",
-    }
-    setTransactions([newTransaction, ...transactions])
-
-    toast({
-      title: language === "ru" ? "Операция выполнена" : "Operation completed",
-      description:
-        language === "ru"
-          ? `Получено наличными: ${formatCurrency(amount)} RUB`
-          : `Cash received: ${formatCurrency(amount)} RUB`,
-    })
-
-    setCashQRState({
-      scanning: false,
-      amount: 0,
-      showAcceptButton: false,
     })
   }
 
@@ -343,37 +316,27 @@ export default function BalancePage() {
             <Wallet className="h-5 w-5 text-primary" />
             <span className="text-sm text-muted-foreground">{t.currentBalance}</span>
           </div>
-          <div className="text-4xl font-bold text-foreground mb-4">
-            {formatCurrency(balance.current)} {balance.currency}
-          </div>
+          <div className="text-4xl font-bold text-foreground mb-4">{formatCurrency(balance)} RUB</div>
 
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div className="p-3 rounded-lg bg-background/50">
               <div className="text-xs text-muted-foreground mb-1">{t.reserved}</div>
-              <div className="text-lg font-semibold text-orange-600">
-                {formatCurrency(balance.reserved)} {balance.currency}
-              </div>
+              <div className="text-lg font-semibold text-orange-600">{formatCurrency(0)} RUB</div>
             </div>
             <div className="p-3 rounded-lg bg-background/50">
               <div className="text-xs text-muted-foreground mb-1">{t.available}</div>
-              <div className="text-lg font-semibold text-green-600">
-                {formatCurrency(available)} {balance.currency}
-              </div>
+              <div className="text-lg font-semibold text-green-600">{formatCurrency(available)} RUB</div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-lg bg-background/50">
               <div className="text-xs text-muted-foreground mb-1">{t.dailyIncome}</div>
-              <div className="text-base font-semibold text-blue-600">
-                {formatCurrency(balance.dailyIncome)} {balance.currency}
-              </div>
+              <div className="text-base font-semibold text-blue-600">{formatCurrency(3250)} RUB</div>
             </div>
             <div className="p-3 rounded-lg bg-background/50">
               <div className="text-xs text-muted-foreground mb-1">{t.weeklyIncome}</div>
-              <div className="text-base font-semibold text-purple-600">
-                {formatCurrency(balance.weeklyIncome)} {balance.currency}
-              </div>
+              <div className="text-base font-semibold text-purple-600">{formatCurrency(18700)} RUB</div>
             </div>
           </div>
         </Card>
@@ -384,36 +347,16 @@ export default function BalancePage() {
             {t.scanQR}
           </Button>
         ) : cashQRState.showAcceptButton && cashQRState.qrData ? (
-          <div>
-            <div className="mb-3 p-4 rounded-lg bg-secondary border-2 border-border">
-              <p className="text-sm font-semibold text-foreground">
-                {t.sumLabel}: {formatCurrency(cashQRState.qrData.sum)} {balance.currency}
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <Button
-                onClick={handleConfirmCashReceive}
-                className="flex-1 h-14 text-base font-semibold"
-                variant="default"
-              >
+          <div className="mt-4 p-4 border rounded-lg bg-background">
+            <p className="text-sm font-medium mb-3">
+              {t.sumLabel}: {formatCurrency(cashQRState.qrData.sum)}
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={handleAcceptCashQR} className="flex-1">
                 {t.accept}
               </Button>
-              <Button
-                onClick={handleRejectCashReceive}
-                className="flex-1 h-14 text-base font-semibold"
-                variant="destructive"
-              >
+              <Button variant="destructive" onClick={handleRejectCashQR} className="flex-1">
                 {t.reject}
-              </Button>
-              <Button
-                onClick={handleRevertCashReceive}
-                className="h-14 w-14 text-base font-semibold bg-transparent"
-                variant="outline"
-                size="icon"
-                title={language === "ru" ? "Вернуть" : "Revert"}
-              >
-                <Undo2 className="h-5 w-5" />
               </Button>
             </div>
           </div>
@@ -427,12 +370,12 @@ export default function BalancePage() {
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {language === "ru"
-                    ? `Сумма: ${formatCurrency(cashQRState.amount)} ${balance.currency}`
-                    : `Amount: ${formatCurrency(cashQRState.amount)} ${balance.currency}`}
+                    ? `Сумма: ${formatCurrency(cashQRState.amount)} RUB`
+                    : `Amount: ${formatCurrency(cashQRState.amount)} RUB`}
                 </div>
               </div>
             </div>
-            <Button onClick={handleRejectCashReceive} className="w-full" variant="destructive">
+            <Button onClick={handleRejectCashQR} className="w-full" variant="destructive">
               {t.reject}
             </Button>
           </Card>
@@ -456,24 +399,30 @@ export default function BalancePage() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-[120px] justify-between bg-transparent">
                   <span className="text-sm">
-                    {paymentFilters.length === 0
+                    {paymentFilters.length === 2
                       ? language === "ru"
                         ? "Все"
                         : "All"
-                      : paymentFilters.length === 2
-                        ? language === "ru"
-                          ? "Все"
-                          : "All"
-                        : paymentFilters[0] === "qr"
+                      : paymentFilters.length === 1
+                        ? paymentFilters[0] === "qr"
                           ? t.qr
                           : language === "ru"
                             ? "ЛС"
-                            : "LS"}
+                            : "LS"
+                        : language === "ru"
+                          ? "Все"
+                          : "All"}
                   </span>
                   <ChevronDown className="h-4 w-4 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[120px]">
+                <DropdownMenuCheckboxItem
+                  checked={paymentFilters.length === 2}
+                  onCheckedChange={() => setPaymentFilters(["qr", "cash"])}
+                >
+                  {language === "ru" ? "Все" : "All"}
+                </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={paymentFilters.includes("qr")}
                   onCheckedChange={() => togglePaymentFilter("qr")}
@@ -530,9 +479,7 @@ export default function BalancePage() {
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{t.paymentAmount}:</span>
-                        <span className="font-bold text-green-600">
-                          {formatCurrency(transaction.amount)} {balance.currency}
-                        </span>
+                        <span className="font-bold text-green-600">{formatCurrency(transaction.amount)} RUB</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{t.currentTime}:</span>
@@ -603,7 +550,7 @@ export default function BalancePage() {
         onInvalid={handleInvalidCashQR}
         language={language}
         showNotFoundButton={cashQRState.scanning}
-        onQRNotFound={handleCashQRNotFound}
+        onQRNotFound={handleRejectCashQR}
       />
     </div>
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { QrCode, CheckCircle2, XCircle } from "lucide-react"
@@ -31,6 +31,8 @@ export function CashQRDialog({
   onQRNotFound,
 }: CashQRDialogProps) {
   const [scanStatus, setScanStatus] = useState<"scanning" | "success" | "error" | "notfound">("scanning")
+  const isScanningRef = useRef(false)
+  const consumedRef = useRef(false)
 
   const t = {
     ru: {
@@ -62,8 +64,22 @@ export function CashQRDialog({
   useEffect(() => {
     if (open) {
       setScanStatus("scanning")
+      isScanningRef.current = false
+      consumedRef.current = false
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open && !isScanningRef.current && !consumedRef.current) {
+      isScanningRef.current = true
+      console.log("[v0] scan:start", { timestamp: new Date().toISOString() })
 
       const scanTimer = setTimeout(() => {
+        if (consumedRef.current) {
+          return
+        }
+
+        consumedRef.current = true
         console.log("[v0] Scanner simulation complete")
 
         // Random validation: 70% valid, 30% invalid
@@ -85,19 +101,16 @@ export function CashQRDialog({
             onInvalid()
           }
         }
+
+        isScanningRef.current = false
       }, 800)
 
       return () => {
         clearTimeout(scanTimer)
+        isScanningRef.current = false
       }
     }
   }, [open, onConfirm, onOpenChange, onInvalid])
-
-  useEffect(() => {
-    if (!open) {
-      setScanStatus("scanning")
-    }
-  }, [open])
 
   const handleQRNotFound = () => {
     console.log("[v0] QR not found button clicked")
