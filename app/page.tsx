@@ -19,6 +19,8 @@ import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
 import { formatCurrency, formatDateTime, generateTripId } from "@/lib/utils"
+import { QueueQRScanner, type QueuePassenger as QueuePassengerType } from "@/components/queue-qr-scanner"
+import { logFSMEvent } from "@/lib/fsm-types"
 
 const STATE = {
   PREP_IDLE: "PREP_IDLE",
@@ -1390,128 +1392,91 @@ export default function DriverDashboard() {
         </Card>
 
         {userStatus === "confirmed" && tripStatus !== STATE.IN_ROUTE && (
-          <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
-              </div>
-              <Badge variant="secondary" className="text-lg px-3 py-1">
-                {queuePassengers.length}
-              </Badge>
-            </div>
+  <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2">
+        <Users className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
+      </div>
+      <Badge variant="secondary" className="text-lg px-3 py-1">
+        {queuePassengers.length}
+      </Badge>
+    </div>
 
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              {queuePassengers.slice(0, 4).map((passenger) => (
-                <div
-                  key={passenger.id}
-                  className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 ${
-                    passenger.qrError // Check for boolean false/true now
-                      ? "bg-red-100 border-red-500 dark:bg-red-900/30 dark:border-red-600"
-                      : passenger.scanned
-                        ? "bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600"
-                        : passenger.isFirst
-                          ? "bg-primary/10 border-primary"
-                          : "bg-secondary border-border"
-                  }`}
-                >
-                  {passenger.qrError && ( // Check for boolean false/true now
-                    <Button
-                      onClick={() => handleReturnQueuePassenger(passenger.id)}
-                      size="icon"
-                      variant="ghost"
-                      className="h-5 w-5 p-0 mb-1"
-                      title={language === "ru" ? "Вернуть" : "Return"}
-                      disabled={isPanelsDisabled}
-                    >
-                      <X className="h-4 w-4 text-red-500" />
-                    </Button>
-                  )}
-                  {!passenger.qrError && ( // Check for boolean false/true now
-                    <div className="flex items-center gap-0.5 mb-1">{renderPassengerIcons(passenger.count)}</div>
-                  )}
-                  <span className="text-xs font-bold">
-                    {passenger.queuePosition} • {passenger.count}
-                  </span>
-                </div>
-              ))}
-              {queuePassengers.length >= 5 && (
-                <div
-                  key={queuePassengers[4].id}
-                  className={`h-20 flex flex-col items-center justify-center p-2 rounded-md border-2 border-dashed ${
-                    queuePassengers[4].qrError // Check for boolean false/true now
-                      ? "bg-red-100 border-red-500 dark:bg-red-900/30 dark:border-red-600"
-                      : queuePassengers[4].scanned
-                        ? "bg-green-100 border-green-500 dark:bg-green-900/30 dark:border-green-600"
-                        : "bg-secondary border-border"
-                  }`}
-                >
-                  {queuePassengers[4].qrError && ( // Check for boolean false/true now
-                    <Button
-                      onClick={() => handleReturnQueuePassenger(queuePassengers[4].id)}
-                      size="icon"
-                      variant="ghost"
-                      className="h-5 w-5 p-0 mb-1"
-                      title={language === "ru" ? "Вернуть" : "Return"}
-                      disabled={isPanelsDisabled}
-                    >
-                      <X className="h-4 w-4 text-red-500" />
-                    </Button>
-                  )}
-                  {!queuePassengers[4].qrError && ( // Check for boolean false/true now
-                    <div className="flex items-center gap-0.5 mb-1">
-                      {renderPassengerIcons(queuePassengers[4].count)}
-                    </div>
-                  )}
-                  <span className="text-xs font-bold">
-                    {queuePassengers[4].queuePosition} • {queuePassengers[4].count}
-                  </span>
-                </div>
-              )}
-            </div>
+    <QueueQRScanner
+      passengers={queuePassengers}
+      onUpdate={setQueuePassengers}
+      onAccept={(passengerId) => {
+        const passenger = queuePassengers.find(p => p.id === passengerId)
+        if (!passenger) return
 
-            {qrScannedData && qrScannedData.scannedPassengerId && (
-              <div className="space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
-                <p className="text-sm font-medium">{qrScannedData.recipient}</p>
-                <p className="text-xs text-muted-foreground">{qrScannedData.createdAt}</p>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleAcceptQueueQR(qrScannedData.scannedPassengerId!)}
-                    className="flex-1"
-                    size="sm"
-                  >
-                    {t.accept}
-                  </Button>
-                  <Button
-                    onClick={() => handleRejectQueueQR(qrScannedData.scannedPassengerId!)}
-                    variant="destructive"
-                    className="flex-1"
-                    size="sm"
-                  >
-                    {t.reject}
-                  </Button>
-                  <Button
-                    onClick={() => setQrScannedData(null)}
-                    className="h-9 w-9"
-                    variant="outline"
-                    size="icon"
-                    title={language === "ru" ? "Вернуть" : "Revert"}
-                    disabled={isPanelsDisabled}
-                  >
-                    <Undo2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
+        const seatCountToAdd = passenger.ticketCount || 1
+        setManualOccupied(prev => prev + seatCountToAdd)
+        
+        setQueuePassengers(queuePassengers.filter(p => p.id !== passengerId))
+        
+        logFSMEvent("accept:success", {
+          passengerId,
+          seatsAdded: seatCountToAdd
+        })
 
-            {!qrScannedData && (
-              <Button onClick={handleScanQueueQR} className="w-full" disabled={isPanelsDisabled}>
-                <Scan className="mr-2 h-4 w-4" />
-                {t.scanQR}
-              </Button>
-            )}
-          </Card>
-        )}
+        toast({
+          title: language === "ru" ? "Пассажир принят" : "Passenger accepted",
+          description: passenger.name,
+        })
+      }}
+      onReject={(passengerId) => {
+        const passenger = queuePassengers.find(p => p.id === passengerId)
+        setQueuePassengers(queuePassengers.filter(p => p.id !== passengerId))
+        
+        logFSMEvent("reject:success", { passengerId })
+
+        toast({
+          title: language === "ru" ? "Пассажир отклонён" : "Passenger rejected",
+          description: passenger?.name,
+          variant: "destructive",
+        })
+      }}
+      onReturn={(passengerId) => {
+        const passenger = queuePassengers.find(p => p.id === passengerId)
+        if (!passenger) return
+
+        const seatCountToRevert = passenger.ticketCount || 1
+        
+        setQueuePassengers(
+          queuePassengers.map(p =>
+            p.id === passengerId
+              ? {
+                  ...p,
+                  showQRButtons: false,
+                  qrData: undefined,
+                  scanned: false,
+                  qrError: false,
+                }
+              : p
+          )
+        )
+
+        if (passenger.scanned) {
+          setManualOccupied(prev => Math.max(0, prev - seatCountToRevert))
+        }
+
+        logFSMEvent("return:success", {
+          passengerId,
+          seatsReverted: seatCountToRevert
+        })
+
+        toast({
+          title: language === "ru" ? "Возврат" : "Return",
+          description: language === "ru" ? "Операция отменена" : "Operation canceled",
+        })
+      }}
+      disabled={isPanelsDisabled}
+      language={language}
+      t={t}
+    />
+  </Card>
+)}
 
         <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
           <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
