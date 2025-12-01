@@ -21,6 +21,7 @@ import Link from "next/link"
 import { formatCurrency, formatDateTime, generateTripId } from "@/lib/utils"
 import { QueueQRScanner, type QueuePassenger as QueuePassengerType } from "@/components/queue-qr-scanner"
 import { logFSMEvent } from "@/lib/fsm-types"
+import { GeoTrackerIndicator } from "@/components/geo-tracker-indicator"
 
 const STATE = {
   PREP_IDLE: "PREP_IDLE",
@@ -235,6 +236,7 @@ export default function DriverDashboard() {
 
   const [isScanningLocked, setIsScanningLocked] = useState(false)
   const [areSeatsLocked, setAreSeatsLocked] = useState(true) // Seats start locked
+  const [isGeoTrackerActive, setIsGeoTrackerActive] = useState(false)
 
   const scanInProgressRef = useRef(false)
 
@@ -271,26 +273,27 @@ export default function DriverDashboard() {
   }
 
   const clickStartPrep = () => {
-    if (userStatus !== "confirmed") {
-      console.log("[v0] ui:blocked", { action: "startPrep", reason: "accountUnconfirmed" })
-      toast({
-        title: t.error,
-        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (tripStatus !== STATE.PREP_IDLE) {
-      console.error("[v0] Illegal transition: clickStartPrep from", tripStatus)
-      return
-    }
-    setAreSeatsLocked(false)
-    const newTripId = generateTripId()
-    setTripId(newTripId)
-    setTripStatus(STATE.PREP_TIMER)
-    setPrepareTimer(600)
+  if (userStatus !== "confirmed") {
+    console.log("[v0] ui:blocked", { action: "startPrep", reason: "accountUnconfirmed" })
+    toast({
+      title: t.error,
+      description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+      variant: "destructive",
+    })
+    return
   }
+
+  if (tripStatus !== STATE.PREP_IDLE) {
+    console.error("[v0] Illegal transition: clickStartPrep from", tripStatus)
+    return
+  }
+  setIsGeoTrackerActive(true) // ← ДОБАВИТЬ ЭТУ СТРОКУ
+  setAreSeatsLocked(false)
+  const newTripId = generateTripId()
+  setTripId(newTripId)
+  setTripStatus(STATE.PREP_TIMER)
+  setPrepareTimer(600)
+}
 
   const clickStartBoarding = () => {
     if (tripStatus !== STATE.PREP_TIMER) {
@@ -317,18 +320,18 @@ export default function DriverDashboard() {
   }
 
   const clickFinish = () => {
-    if (tripStatus !== STATE.IN_ROUTE) {
-      console.error("[v0] Illegal transition: clickFinish from", tripStatus)
-      return
-    }
-    setAreSeatsLocked(true)
-    // Cleanup
-    setPrepareTimer(600)
-    setTripId("")
-    setIsDirectionReversed(false)
-    setTripStatus(STATE.PREP_IDLE)
-    setSelectedTrip("")
+  if (tripStatus !== STATE.IN_ROUTE) {
+    console.error("[v0] Illegal transition: clickFinish from", tripStatus)
+    return
   }
+  setIsGeoTrackerActive(false) // ← ДОБАВИТЬ ЭТУ СТРОКУ
+  setAreSeatsLocked(true)
+  setPrepareTimer(600)
+  setTripId("")
+  setIsDirectionReversed(false)
+  setTripStatus(STATE.PREP_IDLE)
+  setSelectedTrip("")
+}
 
   const getTripButtonText = () => {
     if (tripStatus === STATE.PREP_IDLE) return t.prepareTrip // "Подготовка рейса"
@@ -1290,65 +1293,75 @@ export default function DriverDashboard() {
         ) : (
           <>
             {tripStatus === STATE.IN_ROUTE && (
-              <Button
-                onClick={() => {
-                  if (userStatus !== "confirmed") {
-                    console.log("[v0] ui:blocked", { action: "finishTrip", reason: "accountUnconfirmed" })
-                    toast({
-                      title: t.error,
-                      description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-                      variant: "destructive",
-                    })
-                    return
-                  }
-                  clickFinish()
-                }}
-                className="w-full"
-                size="lg"
-                variant="destructive"
-              >
-                {t.finishTrip}
-              </Button>
-            )}
+      <Button
+        onClick={() => {
+          if (userStatus !== "confirmed") {
+            console.log("[v0] ui:blocked", { action: "finishTrip", reason: "accountUnconfirmed" })
+            toast({
+              title: t.error,
+              description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+              variant: "destructive",
+            })
+            return
+          }
+          clickFinish()
+        }}
+        className="w-full"
+        size="lg"
+        variant="destructive"
+      >
+        {t.finishTrip}
+      </Button>
+    )}
 
-            {/* Trip Status Button - hide when IN_ROUTE since finish button is shown separately */}
-            {tripStatus !== STATE.IN_ROUTE && (
-              <Button
-                onClick={() => {
-                  if (userStatus !== "confirmed") {
-                    console.log("[v0] ui:blocked", { action: "tripStatusButton", reason: "accountUnconfirmed" })
-                    toast({
-                      title: t.error,
-                      description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-                      variant: "destructive",
-                    })
-                    return
-                  }
-
-                  if (tripStatus === STATE.PREP_IDLE && canStartTrip) {
-                    clickStartPrep()
-                  } else if (tripStatus === STATE.PREP_TIMER) {
-                    clickStartBoarding()
-                  } else if (tripStatus === STATE.BOARDING) {
-                    clickReadyForRoute()
-                  } else if (tripStatus === STATE.ROUTE_READY) {
-                    clickStartRoute()
-                  }
-                }}
-                disabled={tripStatus === STATE.PREP_IDLE && !canStartTrip}
-                className="w-full"
-                size="lg"
-              >
-                {getTripButtonText()}
-              </Button>
-            )}
-          </>
+    {tripStatus !== STATE.IN_ROUTE && (
+      <div className="flex items-center gap-2 w-full">
+        {/* Индикатор геотрекера */}
+        {tripStatus !== STATE.PREP_IDLE && (
+          <GeoTrackerIndicator 
+            isActive={isGeoTrackerActive} 
+            language={language}
+          />
         )}
+        
+        <Button
+          onClick={() => {
+            if (userStatus !== "confirmed") {
+              console.log("[v0] ui:blocked", { action: "tripStatusButton", reason: "accountUnconfirmed" })
+              toast({
+                title: t.error,
+                description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+                variant: "destructive",
+              })
+              return
+            }
+
+            if (tripStatus === STATE.PREP_IDLE && canStartTrip) {
+              clickStartPrep()
+            } else if (tripStatus === STATE.PREP_TIMER) {
+              clickStartBoarding()
+            } else if (tripStatus === STATE.BOARDING) {
+              clickReadyForRoute()
+            } else if (tripStatus === STATE.ROUTE_READY) {
+              clickStartRoute()
+            }
+          }}
+          disabled={tripStatus === STATE.PREP_IDLE && !canStartTrip}
+          className="flex-1"
+          size="lg"
+        >
+          {getTripButtonText()}
+        </Button>
+      </div>
+    )}
+  </>
+)}
       </div>
 
       <div className="px-2 pt-4 space-y-6">
-        <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
+        {tripStatus !== STATE.PREP_IDLE && tripStatus !== STATE.PREP_TIMER && (
+  <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+    <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
           <div className="grid grid-cols-4 gap-3">
             <div className="text-center p-4 rounded-lg bg-secondary">
               <div className="flex items-center justify-center gap-2 mb-2">
@@ -1390,8 +1403,9 @@ export default function DriverDashboard() {
             </div>
           </div>
         </Card>
-
-        {userStatus === "confirmed" && tripStatus !== STATE.IN_ROUTE && (
+)}
+        {userStatus === "confirmed" && tripStatus !== STATE.IN_ROUTE && 
+ tripStatus !== STATE.PREP_IDLE && tripStatus !== STATE.PREP_TIMER && (
   <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
     <div className="flex items-center justify-between mb-4">
       <div className="flex items-center gap-2">
@@ -1478,9 +1492,10 @@ export default function DriverDashboard() {
   </Card>
 )}
 
-        <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-          <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
-          <div className="space-y-1">
+        {tripStatus !== STATE.PREP_IDLE && tripStatus !== STATE.PREP_TIMER && (
+  <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+    <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
+    <div className="space-y-1">
             {stops.slice(1, -1).map((stop, index) => {
               const stopBookings = bookings.filter((b) => b.fromStopIndex === stop.id)
               const visibleBookings = stopBookings
@@ -1622,6 +1637,7 @@ export default function DriverDashboard() {
             })}
           </div>
         </Card>
+        )}
       </div>
 
       <CashQRDialog
