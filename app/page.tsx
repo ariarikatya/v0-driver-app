@@ -1316,14 +1316,6 @@ export default function DriverDashboard() {
 
     {tripStatus !== STATE.IN_ROUTE && (
       <div className="flex items-center gap-2 w-full">
-        {/* Индикатор геотрекера */}
-        {tripStatus !== STATE.PREP_IDLE && (
-          <GeoTrackerIndicator 
-            isActive={isGeoTrackerActive} 
-            language={language}
-          />
-        )}
-        
         <Button
           onClick={() => {
             if (userStatus !== "confirmed") {
@@ -1352,6 +1344,14 @@ export default function DriverDashboard() {
         >
           {getTripButtonText()}
         </Button>
+        
+        {/* Индикатор геотрекера справа */}
+        {tripStatus !== STATE.PREP_IDLE && (
+          <GeoTrackerIndicator 
+            isActive={isGeoTrackerActive} 
+            language={language}
+          />
+        )}
       </div>
     )}
   </>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ArrowLeft, Wallet, QrCode, ChevronDown } from "lucide-react"
+import { ArrowLeft, Wallet, QrCode, ChevronDown, Undo2 } from "lucide-react"
 import Link from "next/link"
 import { translations, type Language } from "@/lib/translations"
 import { formatCurrency, formatDateTime } from "@/lib/utils"
@@ -39,6 +39,12 @@ interface SettlementPerson {
   name: string
   amount: number
   type: "driver" | "dispatcher"
+}
+
+interface QRScanData {
+  sum: number
+  recipient: string
+  created_at: string
 }
 
 export default function BalancePage() {
@@ -84,11 +90,20 @@ export default function BalancePage() {
   const [showRecalcPanel, setShowRecalcPanel] = useState(false)
   const [recalcThroughDispatcher, setRecalcThroughDispatcher] = useState(false)
   const [selectedDispatcher, setSelectedDispatcher] = useState("")
-  const [recalcResults, setRecalcResults] = useState<SettlementPerson[]>([])
+  
+  // Сразу показываем список водителей
+  const [recalcResults] = useState<SettlementPerson[]>([
+    { id: 1, name: "Водитель Иванов", amount: 1500, type: "driver" },
+    { id: 2, name: "Водитель Смирнов", amount: 2300, type: "driver" },
+  ])
   
   const [showCashQRDialog, setShowCashQRDialog] = useState(false)
   const [currentSettlementPerson, setCurrentSettlementPerson] = useState<SettlementPerson | null>(null)
   const [settlementAction, setSettlementAction] = useState<"debit" | "credit" | null>(null)
+  
+  // Для операций - добавляем состояние для отсканированных QR
+  const [scannedQRData, setScannedQRData] = useState<QRScanData | null>(null)
+  const [showQRResult, setShowQRResult] = useState(false)
 
   const getTransactionTypeLabel = (type: string) => {
     if (type === "booking") return t.booking
@@ -126,24 +141,6 @@ export default function BalancePage() {
     return matchesPayment
   })
 
-  const handleConfirmRecalc = () => {
-    const mockResults: SettlementPerson[] = recalcThroughDispatcher
-      ? [
-          { id: 1, name: "Диспетчер Петров", amount: 1500, type: "dispatcher" },
-          { id: 2, name: "Диспетчер Сидоров", amount: 2300, type: "dispatcher" },
-        ]
-      : [
-          { id: 1, name: "Водитель Иванов", amount: 1500, type: "driver" },
-          { id: 2, name: "Водитель Смирнов", amount: 2300, type: "driver" },
-        ]
-    
-    setRecalcResults(mockResults)
-    toast({
-      title: language === "ru" ? "Перерасчет выполнен" : "Recalc completed",
-      description: language === "ru" ? "Результаты готовы" : "Results ready",
-    })
-  }
-
   const handleDebit = (person: SettlementPerson) => {
     console.log("[v0] Debit operation:", person.id)
     setCurrentSettlementPerson(person)
@@ -159,20 +156,60 @@ export default function BalancePage() {
   }
 
   const handleQRConfirm = () => {
-    if (!currentSettlementPerson || !settlementAction) return
+    if (activeTab === "operations") {
+      // Для операций - показываем результат сканирования
+      const mockQRData: QRScanData = {
+        sum: 450,
+        recipient: language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I.",
+        created_at: formatDateTime(new Date()),
+      }
+      setScannedQRData(mockQRData)
+      setShowQRResult(true)
+      setShowCashQRDialog(false)
+    } else {
+      // Для взаиморасчетов
+      if (!currentSettlementPerson || !settlementAction) return
 
+      toast({
+        title: language === "ru" 
+          ? (settlementAction === "debit" ? "Списание" : "Зачисление")
+          : (settlementAction === "debit" ? "Debit" : "Credit"),
+        description: language === "ru" 
+          ? `${formatCurrency(currentSettlementPerson.amount)} RUB`
+          : `${formatCurrency(currentSettlementPerson.amount)} RUB`,
+      })
+
+      setShowCashQRDialog(false)
+      setCurrentSettlementPerson(null)
+      setSettlementAction(null)
+    }
+  }
+
+  const handleAcceptQR = () => {
+    if (!scannedQRData) return
+    
     toast({
-      title: language === "ru" 
-        ? (settlementAction === "debit" ? "Списание" : "Зачисление")
-        : (settlementAction === "debit" ? "Debit" : "Credit"),
-      description: language === "ru" 
-        ? `${formatCurrency(currentSettlementPerson.amount)} RUB`
-        : `${formatCurrency(currentSettlementPerson.amount)} RUB`,
+      title: language === "ru" ? "Операция принята" : "Operation accepted",
+      description: `${formatCurrency(scannedQRData.sum)} RUB`,
     })
+    
+    setShowQRResult(false)
+    setScannedQRData(null)
+  }
 
-    setShowCashQRDialog(false)
-    setCurrentSettlementPerson(null)
-    setSettlementAction(null)
+  const handleRejectQR = () => {
+    toast({
+      title: language === "ru" ? "Операция отклонена" : "Operation rejected",
+      variant: "destructive",
+    })
+    
+    setShowQRResult(false)
+    setScannedQRData(null)
+  }
+
+  const handleReturnQR = () => {
+    setShowQRResult(false)
+    setScannedQRData(null)
   }
 
   useEffect(() => {
@@ -286,6 +323,52 @@ export default function BalancePage() {
               </DropdownMenu>
             </div>
 
+            {/* QR Result Display */}
+            {showQRResult && scannedQRData && (
+              <Card className="p-4 border-2 border-green-500 bg-green-50 dark:bg-green-900/20">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-foreground">{t.sumLabel}:</span>
+                    <span className="text-lg font-bold text-green-600">{formatCurrency(scannedQRData.sum)} RUB</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{t.recipientInfo}:</span>
+                    <span className="text-sm font-semibold">{scannedQRData.recipient}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{t.qrCreatedAt}:</span>
+                    <span className="text-sm font-semibold">{scannedQRData.created_at}</span>
+                  </div>
+                  
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      onClick={handleAcceptQR}
+                      className="flex-1"
+                      variant="default"
+                    >
+                      {t.accept}
+                    </Button>
+                    <Button
+                      onClick={handleRejectQR}
+                      className="flex-1"
+                      variant="destructive"
+                    >
+                      {t.reject}
+                    </Button>
+                    <Button
+                      onClick={handleReturnQR}
+                      className="h-10 w-10"
+                      variant="outline"
+                      size="icon"
+                      title={language === "ru" ? "Вернуть" : "Return"}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             <Button onClick={() => setShowCashQRDialog(true)} className="w-full h-14 text-base font-semibold" variant="default">
               <QrCode className="mr-2 h-5 w-5" />
               {t.scanQR}
@@ -354,73 +437,65 @@ export default function BalancePage() {
 
               {showRecalcPanel && (
                 <div className="space-y-3">
-                  <Button onClick={handleConfirmRecalc} className="w-full" size="sm">
-                    {language === "ru" ? "Подтвердить" : "Confirm"}
-                  </Button>
+                  {recalcResults.map((result) => (
+                    <div key={result.id} className="p-2 border rounded-lg bg-secondary">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold">{result.name}</span>
+                        <span className="text-sm font-bold">{formatCurrency(result.amount)} RUB</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 mb-2">
+                        <Checkbox
+                          id={`dispatcher-${result.id}`}
+                          checked={recalcThroughDispatcher}
+                          onCheckedChange={(checked) => {
+                            setRecalcThroughDispatcher(checked as boolean)
+                            if (checked) {
+                              setSelectedDispatcher("")
+                            }
+                          }}
+                        />
+                        <label htmlFor={`dispatcher-${result.id}`} className="text-sm">
+                          {language === "ru" ? "Через диспетчера" : "Through dispatcher"}
+                        </label>
+                      </div>
 
-                  {recalcResults.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {recalcResults.map((result) => (
-                        <div key={result.id} className="p-2 border rounded-lg bg-secondary">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-semibold">{result.name}</span>
-                            <span className="text-sm font-bold">{formatCurrency(result.amount)} RUB</span>
-                          </div>
-                          
-                          <div className="flex items-center gap-2 mb-2">
-                            <Checkbox
-                              id={`dispatcher-${result.id}`}
-                              checked={recalcThroughDispatcher}
-                              onCheckedChange={(checked) => {
-                                setRecalcThroughDispatcher(checked as boolean)
-                                if (checked) {
-                                  setSelectedDispatcher("")
-                                }
-                              }}
-                            />
-                            <label htmlFor={`dispatcher-${result.id}`} className="text-sm">
-                              {language === "ru" ? "Через диспетчера" : "Through dispatcher"}
-                            </label>
-                          </div>
+                      {recalcThroughDispatcher && (
+                        <Select value={selectedDispatcher} onValueChange={setSelectedDispatcher}>
+                          <SelectTrigger className="w-full mb-2">
+                            <SelectValue placeholder={language === "ru" ? "Выберите диспетчера" : "Select dispatcher"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="dispatcher1">
+                              {language === "ru" ? "Диспетчер Петров" : "Dispatcher Petrov"}
+                            </SelectItem>
+                            <SelectItem value="dispatcher2">
+                              {language === "ru" ? "Диспетчер Сидоров" : "Dispatcher Sidorov"}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
 
-                          {recalcThroughDispatcher && (
-                            <Select value={selectedDispatcher} onValueChange={setSelectedDispatcher}>
-                              <SelectTrigger className="w-full mb-2">
-                                <SelectValue placeholder={language === "ru" ? "Выберите диспетчера" : "Select dispatcher"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="dispatcher1">
-                                  {language === "ru" ? "Диспетчер Петров" : "Dispatcher Petrov"}
-                                </SelectItem>
-                                <SelectItem value="dispatcher2">
-                                  {language === "ru" ? "Диспетчер Сидоров" : "Dispatcher Sidorov"}
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => handleDebit(result)}
-                              size="sm"
-                              variant="destructive"
-                              className="flex-1"
-                            >
-                              {language === "ru" ? "Списать" : "Debit"}
-                            </Button>
-                            <Button
-                              onClick={() => handleCredit(result)}
-                              size="sm"
-                              variant="default"
-                              className="flex-1"
-                            >
-                              {language === "ru" ? "Принять" : "Accept"}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => handleDebit(result)}
+                          size="sm"
+                          variant="destructive"
+                          className="flex-1"
+                        >
+                          {language === "ru" ? "Списать" : "Debit"}
+                        </Button>
+                        <Button
+                          onClick={() => handleCredit(result)}
+                          size="sm"
+                          variant="default"
+                          className="flex-1"
+                        >
+                          {language === "ru" ? "Принять" : "Accept"}
+                        </Button>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </Card>
