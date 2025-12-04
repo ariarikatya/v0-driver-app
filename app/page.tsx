@@ -10,7 +10,7 @@ import { useState, useEffect, useRef } from "react" // Added useRef
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { User, Clock, QrCode, Users, Minus, Plus, Wallet, LogOut, ArrowLeftRight, Undo2, X, Scan } from "lucide-react"
+import { User, Clock, QrCode, Users, Minus, Plus, Wallet, LogOut, ArrowLeftRight, Undo2, X } from "lucide-react"
 import { LoginForm } from "@/components/login-form"
 import { RegisterForm } from "@/components/register-form"
 import { translations, type Language } from "@/lib/translations"
@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
 import { formatCurrency, formatDateTime, generateTripId } from "@/lib/utils"
-import { QueueQRScanner, type QueuePassenger as QueuePassengerType } from "@/components/queue-qr-scanner"
+import { QueueQRScanner } from "@/components/queue-qr-scanner"
 import { logFSMEvent } from "@/lib/fsm-types"
 import { GeoTrackerIndicator } from "@/components/geo-tracker-indicator"
 
@@ -273,27 +273,26 @@ export default function DriverDashboard() {
   }
 
   const clickStartPrep = () => {
-  if (userStatus !== "confirmed") {
-    console.log("[v0] ui:blocked", { action: "startPrep", reason: "accountUnconfirmed" })
-    toast({
-      title: t.error,
-      description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-      variant: "destructive",
-    })
-    return
+    if (userStatus !== "confirmed") {
+      console.log("[v0] ui:blocked", { action: "startPrep", reason: "accountUnconfirmed" })
+      toast({
+        title: t.error,
+        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+        variant: "destructive",
+      })
+      return
+    }
+    if (tripStatus !== STATE.PREP_IDLE) {
+      console.error("[v0] Illegal transition: clickStartPrep from", tripStatus)
+      return
+    }
+    setIsGeoTrackerActive(true) // 🟢 ВКЛЮЧАЕМ при "Подготовка рейса"
+    setAreSeatsLocked(false)
+    const newTripId = generateTripId()
+    setTripId(newTripId)
+    setTripStatus(STATE.PREP_TIMER)
+    setPrepareTimer(600)
   }
-
-  if (tripStatus !== STATE.PREP_IDLE) {
-    console.error("[v0] Illegal transition: clickStartPrep from", tripStatus)
-    return
-  }
-  setIsGeoTrackerActive(true) // ← ДОБАВИТЬ ЭТУ СТРОКУ
-  setAreSeatsLocked(false)
-  const newTripId = generateTripId()
-  setTripId(newTripId)
-  setTripStatus(STATE.PREP_TIMER)
-  setPrepareTimer(600)
-}
 
   const clickStartBoarding = () => {
     if (tripStatus !== STATE.PREP_TIMER) {
@@ -316,22 +315,23 @@ export default function DriverDashboard() {
       console.error("[v0] Illegal transition: clickStartRoute from", tripStatus)
       return
     }
+    // Трекер уже включен в PREP_TIMER, здесь ничего не делаем.
     setTripStatus(STATE.IN_ROUTE)
   }
 
   const clickFinish = () => {
-  if (tripStatus !== STATE.IN_ROUTE) {
-    console.error("[v0] Illegal transition: clickFinish from", tripStatus)
-    return
+    if (tripStatus !== STATE.IN_ROUTE) {
+      console.error("[v0] Illegal transition: clickFinish from", tripStatus)
+      return
+    }
+    setIsGeoTrackerActive(false) // 🔴 ВЫКЛЮЧАЕМ при "Завершить рейс"
+    setAreSeatsLocked(true)
+    setPrepareTimer(600)
+    setTripId("")
+    setIsDirectionReversed(false)
+    setTripStatus(STATE.PREP_IDLE)
+    setSelectedTrip("")
   }
-  setIsGeoTrackerActive(false) // ← ДОБАВИТЬ ЭТУ СТРОКУ
-  setAreSeatsLocked(true)
-  setPrepareTimer(600)
-  setTripId("")
-  setIsDirectionReversed(false)
-  setTripStatus(STATE.PREP_IDLE)
-  setSelectedTrip("")
-}
 
   const getTripButtonText = () => {
     if (tripStatus === STATE.PREP_IDLE) return t.prepareTrip // "Подготовка рейса"
@@ -1292,351 +1292,354 @@ export default function DriverDashboard() {
           </Card>
         ) : (
           <>
+            {/* Рендеринг кнопки "Завершить рейс" (только в IN_ROUTE) */}
             {tripStatus === STATE.IN_ROUTE && (
-      <Button
-        onClick={() => {
-          if (userStatus !== "confirmed") {
-            console.log("[v0] ui:blocked", { action: "finishTrip", reason: "accountUnconfirmed" })
-            toast({
-              title: t.error,
-              description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-              variant: "destructive",
-            })
-            return
-          }
-          clickFinish()
-        }}
-        className="w-full"
-        size="lg"
-        variant="destructive"
-      >
-        {t.finishTrip}
-      </Button>
-    )}
+              <div className="flex items-center gap-2 w-full">
+                <Button
+                  onClick={() => {
+                    if (userStatus !== "confirmed") {
+                      console.log("[v0] ui:blocked", { action: "finishTrip", reason: "accountUnconfirmed" })
+                      toast({
+                        title: t.error,
+                        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+                        variant: "destructive",
+                      })
+                      return
+                    }
+                    clickFinish()
+                  }}
+                  className="flex-1" // Добавлено flex-1, чтобы кнопка занимала место рядом с индикатором
+                  size="lg"
+                  variant="destructive"
+                >
+                  {t.finishTrip}
+                </Button>
 
-    {tripStatus !== STATE.IN_ROUTE && (
-      <div className="flex items-center gap-2 w-full">
-        <Button
-          onClick={() => {
-            if (userStatus !== "confirmed") {
-              console.log("[v0] ui:blocked", { action: "tripStatusButton", reason: "accountUnconfirmed" })
-              toast({
-                title: t.error,
-                description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-                variant: "destructive",
-              })
-              return
-            }
+                {/* Индикатор геотрекера рядом с кнопкой "Завершить рейс" */}
+                <GeoTrackerIndicator isActive={isGeoTrackerActive} language={language} />
+              </div>
+            )}
 
-            if (tripStatus === STATE.PREP_IDLE && canStartTrip) {
-              clickStartPrep()
-            } else if (tripStatus === STATE.PREP_TIMER) {
-              clickStartBoarding()
-            } else if (tripStatus === STATE.BOARDING) {
-              clickReadyForRoute()
-            } else if (tripStatus === STATE.ROUTE_READY) {
-              clickStartRoute()
-            }
-          }}
-          disabled={tripStatus === STATE.PREP_IDLE && !canStartTrip}
-          className="flex-1"
-          size="lg"
-        >
-          {getTripButtonText()}
-        </Button>
-        
-        {/* Индикатор геотрекера справа */}
-        {tripStatus !== STATE.PREP_IDLE && (
-          <GeoTrackerIndicator 
-            isActive={isGeoTrackerActive} 
-            language={language}
-          />
+            {/* Рендеринг кнопок "Подготовка/Посадка/Начать рейс" (во всех остальных статусах) */}
+            {tripStatus !== STATE.IN_ROUTE && (
+              <div className="flex items-center gap-2 w-full">
+                <Button
+                  onClick={() => {
+                    if (userStatus !== "confirmed") {
+                      console.log("[v0] ui:blocked", { action: "tripStatusButton", reason: "accountUnconfirmed" })
+                      toast({
+                        title: t.error,
+                        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+                        variant: "destructive",
+                      })
+                      return
+                    }
+
+                    if (tripStatus === STATE.PREP_IDLE && canStartTrip) {
+                      clickStartPrep()
+                    } else if (tripStatus === STATE.PREP_TIMER) {
+                      clickStartBoarding()
+                    } else if (tripStatus === STATE.BOARDING) {
+                      clickReadyForRoute()
+                    } else if (tripStatus === STATE.ROUTE_READY) {
+                      clickStartRoute()
+                    }
+                  }}
+                  disabled={tripStatus === STATE.PREP_IDLE && !canStartTrip}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {getTripButtonText()}
+                </Button>
+
+                {/* Индикатор геотрекера рядом с кнопкой "Начать рейс" и т.д. */}
+                {tripStatus !== STATE.PREP_IDLE && (
+                  <GeoTrackerIndicator isActive={isGeoTrackerActive} language={language} />
+                )}
+              </div>
+            )}
+          </>
         )}
-      </div>
-    )}
-  </>
-)}
       </div>
 
       <div className="px-2 pt-4 space-y-6">
-        {tripStatus !== STATE.PREP_IDLE && tripStatus !== STATE.PREP_TIMER && (
-  <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-    <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
-          <div className="grid grid-cols-4 gap-3">
-            <div className="text-center p-4 rounded-lg bg-secondary">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7 bg-transparent"
-                  onClick={() => setManualOccupied(Math.max(0, manualOccupied - 1))}
-                  disabled={manualOccupied === 0 || isPanelsDisabled}
-                >
-                  <Minus className="h-3 w-3" />
-                </Button>
-                <div className="text-2xl font-bold text-primary">{occupiedCount}</div>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7 bg-transparent"
-                  onClick={() => setManualOccupied(Math.min(6, manualOccupied + 1))}
-                  disabled={manualOccupied === 6 || isPanelsDisabled}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-              <div className="text-xs text-muted-foreground">{t.occupied}</div>
-            </div>
-            <div className="text-center p-4 rounded-lg bg-secondary">
-              <div className="text-2xl font-bold text-blue-600">
-                {acceptedBookingsCount}:{pendingBookingsCount}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">{t.bookingsShort}</div>
-            </div>
-            <div className="text-center p-4 rounded-lg bg-secondary">
-              <div className="text-2xl font-bold text-accent">{freeCount}</div>
-              <div className="text-xs text-muted-foreground mt-1">{t.free}</div>
-            </div>
-            <div className="text-center p-4 rounded-lg bg-secondary">
-              <div className="text-2xl font-bold text-foreground">6</div>
-              <div className="text-xs text-muted-foreground mt-1">{t.total}</div>
-            </div>
-          </div>
-        </Card>
-)}
-        {userStatus === "confirmed" && tripStatus !== STATE.IN_ROUTE && 
- tripStatus !== STATE.PREP_IDLE && tripStatus !== STATE.PREP_TIMER && (
-  <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-    <div className="flex items-center justify-between mb-4">
-      <div className="flex items-center gap-2">
-        <Users className="h-5 w-5 text-primary" />
-        <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
-      </div>
-      <Badge variant="secondary" className="text-lg px-3 py-1">
-        {queuePassengers.length}
-      </Badge>
-    </div>
-
-    <QueueQRScanner
-      passengers={queuePassengers}
-      onUpdate={setQueuePassengers}
-      onAccept={(passengerId) => {
-        const passenger = queuePassengers.find(p => p.id === passengerId)
-        if (!passenger) return
-
-        const seatCountToAdd = passenger.ticketCount || 1
-        setManualOccupied(prev => prev + seatCountToAdd)
-        
-        setQueuePassengers(queuePassengers.filter(p => p.id !== passengerId))
-        
-        logFSMEvent("accept:success", {
-          passengerId,
-          seatsAdded: seatCountToAdd
-        })
-
-        toast({
-          title: language === "ru" ? "Пассажир принят" : "Passenger accepted",
-          description: passenger.name,
-        })
-      }}
-      onReject={(passengerId) => {
-        const passenger = queuePassengers.find(p => p.id === passengerId)
-        setQueuePassengers(queuePassengers.filter(p => p.id !== passengerId))
-        
-        logFSMEvent("reject:success", { passengerId })
-
-        toast({
-          title: language === "ru" ? "Пассажир отклонён" : "Passenger rejected",
-          description: passenger?.name,
-          variant: "destructive",
-        })
-      }}
-      onReturn={(passengerId) => {
-        const passenger = queuePassengers.find(p => p.id === passengerId)
-        if (!passenger) return
-
-        const seatCountToRevert = passenger.ticketCount || 1
-        
-        setQueuePassengers(
-          queuePassengers.map(p =>
-            p.id === passengerId
-              ? {
-                  ...p,
-                  showQRButtons: false,
-                  qrData: undefined,
-                  scanned: false,
-                  qrError: false,
-                }
-              : p
-          )
-        )
-
-        if (passenger.scanned) {
-          setManualOccupied(prev => Math.max(0, prev - seatCountToRevert))
-        }
-
-        logFSMEvent("return:success", {
-          passengerId,
-          seatsReverted: seatCountToRevert
-        })
-
-        toast({
-          title: language === "ru" ? "Возврат" : "Return",
-          description: language === "ru" ? "Операция отменена" : "Operation canceled",
-        })
-      }}
-      disabled={isPanelsDisabled}
-      language={language}
-      t={t}
-    />
-  </Card>
-)}
-
-        {tripStatus !== STATE.PREP_IDLE && tripStatus !== STATE.PREP_TIMER && (
-  <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-    <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
-    <div className="space-y-1">
-            {stops.slice(1, -1).map((stop, index) => {
-              const stopBookings = bookings.filter((b) => b.fromStopIndex === stop.id)
-              const visibleBookings = stopBookings
-
-              return (
-                <div key={stop.id}>
-                  <div className="flex items-start gap-3 py-2">
-                    <div className="flex-shrink-0 mt-1">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm font-semibold text-muted-foreground">{stop.time}</span>
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <h3 className="font-semibold text-base text-foreground">{stop.name}</h3>
-                        </div>
-                      </div>
-
-                      {visibleBookings.length > 0 && (
-                        <div className="space-y-2 mt-3">
-                          {visibleBookings.map((booking) => (
-                            <div
-                              key={booking.id}
-                              className={`p-3 rounded-lg bg-secondary border ${
-                                highlightedBookingId === booking.id
-                                  ? "border-green-500 ring-2 ring-green-500/50 bg-green-50 dark:bg-green-900/20"
-                                  : booking.qrError
-                                    ? "border-red-500"
-                                    : "border-border"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
-                                  {booking.qrError && <X className="h-4 w-4 text-red-500" />}
-                                  {booking.passengerName}
-                                </h4>
-                                <span className="text-xs text-muted-foreground font-semibold">
-                                  {booking.count} {t.bookings}
-                                </span>
-                              </div>
-
-                              {booking.qrError && (
-                                <div className="space-y-2">
-                                  <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
-                                    <p className="text-xs text-destructive">{booking.qrError}</p>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      onClick={() => handleRejectQRNotFoundBooking(booking.id)}
-                                      className="flex-1 h-9 text-sm font-semibold"
-                                      variant="destructive"
-                                      size="sm"
-                                      disabled={isPanelsDisabled}
-                                    >
-                                      {t.reject}
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleReturnBooking(booking.id)}
-                                      className="h-9 w-9"
-                                      variant="outline"
-                                      size="icon"
-                                      title={language === "ru" ? "Вернуть" : "Return"}
-                                      disabled={isPanelsDisabled}
-                                    >
-                                      <Undo2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {!booking.qrError && booking.showQRButtons && booking.qrData && (
-                                <div>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      onClick={() => handleAcceptBookingQR(booking.id)}
-                                      className="flex-1 h-9 text-sm font-semibold"
-                                      variant="default"
-                                      size="sm"
-                                      disabled={isPanelsDisabled}
-                                    >
-                                      {t.accept}
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleRejectBookingQR(booking.id)}
-                                      className="flex-1 h-9 text-sm font-semibold"
-                                      variant="destructive"
-                                      size="sm"
-                                      disabled={isPanelsDisabled}
-                                    >
-                                      {t.reject}
-                                    </Button>
-                                    <Button
-                                      onClick={() => handleReturnBooking(booking.id)}
-                                      className="h-9 w-9"
-                                      variant="outline"
-                                      size="icon"
-                                      title={language === "ru" ? "Вернуть" : "Return"}
-                                      disabled={isPanelsDisabled}
-                                    >
-                                      <Undo2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-
-                              {!booking.qrError && !booking.showQRButtons && (
-                                <Button
-                                  onClick={() => handleAcceptBooking(booking.id)}
-                                  className="w-full h-9 text-sm font-semibold"
-                                  variant={booking.accepted ? "outline" : "default"}
-                                  size="sm"
-                                  disabled={isPanelsDisabled}
-                                >
-                                  {booking.accepted ? (
-                                    <>
-                                      <QrCode className="mr-2 h-4 w-4" />
-                                      {t.scanQR}
-                                    </>
-                                  ) : (
-                                    t.acceptBooking
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {index < stops.slice(1, -1).length - 1 && (
-                    <div className="ml-2">
-                      <div className="w-px h-8 bg-border" />
-                    </div>
-                  )}
+        {selectedTrip && (
+          <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+            <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="text-center p-4 rounded-lg bg-secondary">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7 bg-transparent"
+                    onClick={() => setManualOccupied(Math.max(0, manualOccupied - 1))}
+                    disabled={manualOccupied === 0 || isPanelsDisabled}
+                  >
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <div className="text-2xl font-bold text-primary">{occupiedCount}</div>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7 bg-transparent"
+                    onClick={() => setManualOccupied(Math.min(6, manualOccupied + 1))}
+                    disabled={manualOccupied === 6 || isPanelsDisabled}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
                 </div>
-              )
-            })}
-          </div>
-        </Card>
+                <div className="text-xs text-muted-foreground">{t.occupied}</div>
+              </div>
+              <div className="text-center p-4 rounded-lg bg-secondary">
+                <div className="text-2xl font-bold text-blue-600">
+                  {acceptedBookingsCount}:{pendingBookingsCount}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">{t.bookingsShort}</div>
+              </div>
+              <div className="text-center p-4 rounded-lg bg-secondary">
+                <div className="text-2xl font-bold text-accent">{freeCount}</div>
+                <div className="text-xs text-muted-foreground mt-1">{t.free}</div>
+              </div>
+              <div className="text-center p-4 rounded-lg bg-secondary">
+                <div className="text-2xl font-bold text-foreground">6</div>
+                <div className="text-xs text-muted-foreground mt-1">{t.total}</div>
+              </div>
+            </div>
+          </Card>
+        )}
+        {selectedTrip && tripStatus !== STATE.IN_ROUTE && (
+          <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-bold text-foreground">{t.queue}</h2>
+              </div>
+              <Badge variant="secondary" className="text-lg px-3 py-1">
+                {queuePassengers.length}
+              </Badge>
+            </div>
+
+            <QueueQRScanner
+              passengers={queuePassengers}
+              onUpdate={setQueuePassengers}
+              onAccept={(passengerId) => {
+                const passenger = queuePassengers.find((p) => p.id === passengerId)
+                if (!passenger) return
+
+                const seatCountToAdd = passenger.ticketCount || 1
+                setManualOccupied((prev) => prev + seatCountToAdd)
+
+                setQueuePassengers(queuePassengers.filter((p) => p.id !== passengerId))
+
+                logFSMEvent("accept:success", {
+                  passengerId,
+                  seatsAdded: seatCountToAdd,
+                })
+
+                toast({
+                  title: language === "ru" ? "Пассажир принят" : "Passenger accepted",
+                  description: passenger.name,
+                })
+              }}
+              onReject={(passengerId) => {
+                const passenger = queuePassengers.find((p) => p.id === passengerId)
+                setQueuePassengers(queuePassengers.filter((p) => p.id !== passengerId))
+
+                logFSMEvent("reject:success", { passengerId })
+
+                toast({
+                  title: language === "ru" ? "Пассажир отклонён" : "Passenger rejected",
+                  description: passenger?.name,
+                  variant: "destructive",
+                })
+              }}
+              onReturn={(passengerId) => {
+                const passenger = queuePassengers.find((p) => p.id === passengerId)
+                if (!passenger) return
+
+                const seatCountToRevert = passenger.ticketCount || 1
+
+                setQueuePassengers(
+                  queuePassengers.map((p) =>
+                    p.id === passengerId
+                      ? {
+                          ...p,
+                          showQRButtons: false,
+                          qrData: undefined,
+                          scanned: false,
+                          qrError: false,
+                        }
+                      : p,
+                  ),
+                )
+
+                if (passenger.scanned) {
+                  setManualOccupied((prev) => Math.max(0, prev - seatCountToRevert))
+                }
+
+                logFSMEvent("return:success", {
+                  passengerId,
+                  seatsReverted: seatCountToRevert,
+                })
+
+                toast({
+                  title: language === "ru" ? "Возврат" : "Return",
+                  description: language === "ru" ? "Операция отменена" : "Operation canceled",
+                })
+              }}
+              disabled={isPanelsDisabled}
+              language={language}
+              t={t}
+            />
+          </Card>
+        )}
+
+        {selectedTrip && (
+          <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+            <h2 className="text-lg font-bold text-foreground mb-4">{t.stops}</h2>
+            <div className="space-y-1">
+              {stops.slice(1, -1).map((stop, index) => {
+                const stopBookings = bookings.filter((b) => b.fromStopIndex === stop.id)
+                const visibleBookings = stopBookings
+
+                return (
+                  <div key={stop.id}>
+                    <div className="flex items-start gap-3 py-2">
+                      <div className="flex-shrink-0 mt-1">
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm font-semibold text-muted-foreground">{stop.time}</span>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <h3 className="font-semibold text-base text-foreground">{stop.name}</h3>
+                          </div>
+                        </div>
+
+                        {visibleBookings.length > 0 && (
+                          <div className="space-y-2 mt-3">
+                            {visibleBookings.map((booking) => (
+                              <div
+                                key={booking.id}
+                                className={`p-3 rounded-lg bg-secondary border ${
+                                  highlightedBookingId === booking.id
+                                    ? "border-green-500 ring-2 ring-green-500/50 bg-green-50 dark:bg-green-900/20"
+                                    : booking.qrError
+                                      ? "border-red-500"
+                                      : "border-border"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                                    {booking.qrError && <X className="h-4 w-4 text-red-500" />}
+                                    {booking.passengerName}
+                                  </h4>
+                                  <span className="text-xs text-muted-foreground font-semibold">
+                                    {booking.count} {t.bookings}
+                                  </span>
+                                </div>
+
+                                {booking.qrError && (
+                                  <div className="space-y-2">
+                                    <div className="p-2 rounded bg-destructive/10 border border-destructive/20">
+                                      <p className="text-xs text-destructive">{booking.qrError}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        onClick={() => handleRejectQRNotFoundBooking(booking.id)}
+                                        className="flex-1 h-9 text-sm font-semibold"
+                                        variant="destructive"
+                                        size="sm"
+                                        disabled={isPanelsDisabled}
+                                      >
+                                        {t.reject}
+                                      </Button>
+                                      <Button
+                                        onClick={() => handleReturnBooking(booking.id)}
+                                        className="h-9 w-9"
+                                        variant="outline"
+                                        size="icon"
+                                        title={language === "ru" ? "Вернуть" : "Return"}
+                                        disabled={isPanelsDisabled}
+                                      >
+                                        <Undo2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {!booking.qrError && booking.showQRButtons && booking.qrData && (
+                                  <div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        onClick={() => handleAcceptBookingQR(booking.id)}
+                                        className="flex-1 h-9 text-sm font-semibold"
+                                        variant="default"
+                                        size="sm"
+                                        disabled={isPanelsDisabled}
+                                      >
+                                        {t.accept}
+                                      </Button>
+                                      <Button
+                                        onClick={() => handleRejectBookingQR(booking.id)}
+                                        className="flex-1 h-9 text-sm font-semibold"
+                                        variant="destructive"
+                                        size="sm"
+                                        disabled={isPanelsDisabled}
+                                      >
+                                        {t.reject}
+                                      </Button>
+                                      <Button
+                                        onClick={() => handleReturnBooking(booking.id)}
+                                        className="h-9 w-9"
+                                        variant="outline"
+                                        size="icon"
+                                        title={language === "ru" ? "Вернуть" : "Return"}
+                                        disabled={isPanelsDisabled}
+                                      >
+                                        <Undo2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {!booking.qrError && !booking.showQRButtons && (
+                                  <Button
+                                    onClick={() => handleAcceptBooking(booking.id)}
+                                    className="w-full h-9 text-sm font-semibold"
+                                    variant={booking.accepted ? "outline" : "default"}
+                                    size="sm"
+                                    disabled={isPanelsDisabled}
+                                  >
+                                    {booking.accepted ? (
+                                      <>
+                                        <QrCode className="mr-2 h-4 w-4" />
+                                        {t.scanQR}
+                                      </>
+                                    ) : (
+                                      t.acceptBooking
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {index < stops.slice(1, -1).length - 1 && (
+                      <div className="ml-2">
+                        <div className="w-px h-8 bg-border" />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
         )}
       </div>
 

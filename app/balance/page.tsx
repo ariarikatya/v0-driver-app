@@ -1,9 +1,8 @@
 "use client"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ArrowLeft, Wallet, QrCode, ChevronDown, Undo2 } from "lucide-react"
+import { ArrowLeft, Wallet, QrCode, ChevronDown, Undo2, RefreshCw, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { translations, type Language } from "@/lib/translations"
 import { formatCurrency, formatDateTime } from "@/lib/utils"
@@ -19,6 +18,7 @@ import {
 import { CashQRDialog } from "@/components/cash-qr-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 interface Transaction {
   id: number
@@ -39,6 +39,9 @@ interface SettlementPerson {
   name: string
   amount: number
   type: "driver" | "dispatcher"
+  throughDispatcher?: boolean
+  selectedDispatcher?: string
+  completedAt?: Date // Поле для успешного завершения
 }
 
 interface QRScanData {
@@ -87,23 +90,23 @@ export default function BalancePage() {
 
   const available = balance
 
-  const [showRecalcPanel, setShowRecalcPanel] = useState(false)
-  const [recalcThroughDispatcher, setRecalcThroughDispatcher] = useState(false)
-  const [selectedDispatcher, setSelectedDispatcher] = useState("")
-  
-  // Сразу показываем список водителей
-  const [recalcResults] = useState<SettlementPerson[]>([
-    { id: 1, name: "Водитель Иванов", amount: 1500, type: "driver" },
-    { id: 2, name: "Водитель Смирнов", amount: 2300, type: "driver" },
+  // Добавили отрицательную сумму для примера кнопки "Списать"
+  const [recalcResults, setRecalcResults] = useState<SettlementPerson[]>([
+    { id: 1, name: "Водитель Иванов", amount: 1500, type: "driver", throughDispatcher: false, selectedDispatcher: "" },
+    { id: 2, name: "Водитель Смирнов", amount: -500, type: "driver", throughDispatcher: false, selectedDispatcher: "" },
   ])
-  
+
+  const [lastRecalcTime, setLastRecalcTime] = useState<Date | null>(null) // Дата последнего перерасчета
+
   const [showCashQRDialog, setShowCashQRDialog] = useState(false)
+  const [showGeneratedQR, setShowGeneratedQR] = useState(false)
   const [currentSettlementPerson, setCurrentSettlementPerson] = useState<SettlementPerson | null>(null)
   const [settlementAction, setSettlementAction] = useState<"debit" | "credit" | null>(null)
-  
-  // Для операций - добавляем состояние для отсканированных QR
+  const [generatedQRData, setGeneratedQRData] = useState<QRScanData | null>(null)
+
   const [scannedQRData, setScannedQRData] = useState<QRScanData | null>(null)
-  const [showQRResult, setShowQRResult] = useState(false)
+  const [showQRResult, setShowQRResult] = useState<"operations" | "settlements" | false>(false) // qrError: null | 'not_found' | 'mismatch'
+  const [qrError, setQRError] = useState<null | "not_found" | "mismatch">(null)
 
   const getTransactionTypeLabel = (type: string) => {
     if (type === "booking") return t.booking
@@ -141,60 +144,302 @@ export default function BalancePage() {
     return matchesPayment
   })
 
-  const handleDebit = (person: SettlementPerson) => {
-    console.log("[v0] Debit operation:", person.id)
-    setCurrentSettlementPerson(person)
-    setSettlementAction("debit")
-    setShowCashQRDialog(true)
+  // 1. Кнопка перерасчета
+  const handleRecalculate = () => {
+    // Здесь была бы логика запроса к API
+    setLastRecalcTime(new Date())
+    toast({
+      title: language === "ru" ? "Список обновлен" : "List updated",
+    })
   }
 
-  const handleCredit = (person: SettlementPerson) => {
-    console.log("[v0] Credit operation:", person.id)
-    setCurrentSettlementPerson(person)
-    setSettlementAction("credit")
-    setShowCashQRDialog(true)
-  }
+  // Обработка действий (Принять/Списать)
+  const handleSettlementAction = (person: SettlementPerson, action: "debit" | "credit") => {
+    console.log(`[v1] ${action} operation:`, person.id)
 
-  const handleQRConfirm = () => {
-    if (activeTab === "operations") {
-      // Для операций - показываем результат сканирования
-      const mockQRData: QRScanData = {
-        sum: 450,
-        recipient: language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I.",
-        created_at: formatDateTime(new Date()),
+    setCurrentSettlementPerson(person)
+    setSettlementAction(action)
+
+    // Определяем сумму, которую нужно перенести (положительная для Диспетчера, т.к. он принимает)
+    const amountToTransfer = person.amount < 0 ? Math.abs(person.amount) : person.amount
+
+    if (action === "debit") {
+      // *** Списание ***
+      if (person.throughDispatcher && person.selectedDispatcher) {
+        // Списание ЧЕРЕЗ ДИСПЕТЧЕРА
+        const dispatcherName =
+          person.selectedDispatcher === "dispatcher1"
+            ? language === "ru"
+              ? "Диспетчер Петров"
+              : "Dispatcher Petrov"
+            : language === "ru"
+              ? "Диспетчер Сидоров"
+              : "Dispatcher Sidorov"
+
+        // Ищем существующего диспетчера или создаем нового
+        setRecalcResults((prev) => {
+          const existingDispatcher = prev.find((p) => p.name === dispatcherName && p.type === "dispatcher")
+
+          let newRecalcResults = prev.map((p) =>
+            p.id === person.id // Помечаем операцию водителя как завершенную
+              ? { ...p, completedAt: new Date(), throughDispatcher: false, selectedDispatcher: "" }
+              : p,
+          )
+
+          if (existingDispatcher) {
+            // Обновляем сумму существующего диспетчера
+            newRecalcResults = newRecalcResults.map((p) =>
+              p.id === existingDispatcher.id ? { ...p, amount: p.amount - amountToTransfer } : p,
+            )
+          } else {
+            // Создаем новую запись для диспетчера
+            const newDispatcherItem: SettlementPerson = {
+              id: Date.now(),
+              name: dispatcherName,
+              amount: -amountToTransfer,
+              type: "dispatcher",
+              throughDispatcher: false,
+            }
+            newRecalcResults = [...newRecalcResults, newDispatcherItem]
+          }
+          return newRecalcResults
+        })
+
+        toast({
+          title: language === "ru" ? "Перенесено на диспетчера" : "Transferred to dispatcher",
+          description: `${dispatcherName}: ${formatCurrency(amountToTransfer)} RUB`,
+        })
+
+        setCurrentSettlementPerson(null)
+        setSettlementAction(null)
+      } else {
+        // Обычное списание (генерируем QR)
+        const qrData: QRScanData = {
+          sum: Math.abs(person.amount),
+          recipient: person.name,
+          created_at: formatDateTime(new Date()),
+        }
+        setGeneratedQRData(qrData)
+        setShowGeneratedQR(true)
       }
-      setScannedQRData(mockQRData)
-      setShowQRResult(true)
-      setShowCashQRDialog(false)
     } else {
-      // Для взаиморасчетов
-      if (!currentSettlementPerson || !settlementAction) return
+      // *** Принятие ***
+      if (person.throughDispatcher && person.selectedDispatcher) {
+        // Принятие через диспетчера - НЕ сканируем QR сразу, а переносим на диспетчера
+        const dispatcherName =
+          person.selectedDispatcher === "dispatcher1"
+            ? language === "ru"
+              ? "Диспетчер Петров"
+              : "Dispatcher Petrov"
+            : language === "ru"
+              ? "Диспетчер Сидоров"
+              : "Dispatcher Sidorov"
 
-      toast({
-        title: language === "ru" 
-          ? (settlementAction === "debit" ? "Списание" : "Зачисление")
-          : (settlementAction === "debit" ? "Debit" : "Credit"),
-        description: language === "ru" 
-          ? `${formatCurrency(currentSettlementPerson.amount)} RUB`
-          : `${formatCurrency(currentSettlementPerson.amount)} RUB`,
-      })
+        const existingDispatcher = recalcResults.find((p) => p.name === dispatcherName && p.type === "dispatcher")
 
-      setShowCashQRDialog(false)
-      setCurrentSettlementPerson(null)
-      setSettlementAction(null)
+        if (existingDispatcher) {
+          setRecalcResults((prev) =>
+            prev.map((p) =>
+              p.id === existingDispatcher.id
+                ? { ...p, amount: p.amount + person.amount }
+                : p.id === person.id
+                  ? { ...p, completedAt: new Date() }
+                  : p,
+            ),
+          )
+        } else {
+          const newDispatcherItem: SettlementPerson = {
+            id: Date.now(),
+            name: dispatcherName,
+            amount: person.amount,
+            type: "dispatcher",
+            throughDispatcher: false,
+          }
+          setRecalcResults((prev) => [
+            ...prev.map((p) => (p.id === person.id ? { ...p, completedAt: new Date() } : p)),
+            newDispatcherItem,
+          ])
+        }
+
+        toast({
+          title: language === "ru" ? "Перенесено на диспетчера" : "Transferred to dispatcher",
+          description: `${dispatcherName}: ${formatCurrency(person.amount)} RUB`,
+        })
+
+        setCurrentSettlementPerson(null)
+        setSettlementAction(null)
+      } else {
+        // Обычное принятие - сканируем QR (включая диспетчеров)
+        setShowCashQRDialog(true)
+      }
     }
   }
 
+  const handleQRConfirm = () => {
+  if (activeTab === "operations") {
+    // Логика для вкладки Операции (без изменений)
+    const mockQRData: QRScanData = {
+      sum: 450,
+      recipient: language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I.",
+      created_at: formatDateTime(new Date()),
+    }
+    setScannedQRData(mockQRData)
+    setQRError(null)
+    setShowQRResult(activeTab)
+    setShowCashQRDialog(false)
+  } else {
+    // Логика для вкладки Расчеты
+    if (!currentSettlementPerson) return
+
+    // ==================================================================
+    // Для тестирования можно переключать эти флаги:
+    // - isSimulateNotFound = true  -> "QR не найден"
+    // - isSimulateError = true     -> "QR найден, но не соответствует"
+    // По умолчанию оба false -> симулируем успешное чтение.
+    // ==================================================================
+    const isSimulateNotFound = false // поставьте true для теста "не найден"
+    const isSimulateError = false // поставьте true для теста "несовпадение"
+
+    if (isSimulateNotFound) {
+      // QR не найден в системе
+      setScannedQRData(null)
+      setQRError("not_found")
+      setShowQRResult("settlements")
+      setShowCashQRDialog(false)
+      return
+    }
+
+    if (isSimulateError) {
+      // QR найден, но данные отличаются (неверная сумма/получатель)
+      const mockQRData: QRScanData = {
+        sum: Math.abs(currentSettlementPerson.amount) + 100, // неверная сумма
+        recipient: "Неизвестный Водитель",
+        created_at: formatDateTime(new Date()),
+      }
+      setScannedQRData(mockQRData)
+      setQRError("mismatch")
+      setShowQRResult("settlements")
+      setShowCashQRDialog(false)
+      return
+    }
+
+    // По умолчанию — успешное сканирование (данные совпадают)
+    const mockQRData: QRScanData = {
+      sum: Math.abs(currentSettlementPerson.amount),
+      recipient: currentSettlementPerson.name,
+      created_at: formatDateTime(new Date()),
+    }
+
+    setScannedQRData(mockQRData)
+    setQRError(null)
+    setShowQRResult("settlements")
+    setShowCashQRDialog(false)
+  }
+}
+
+  const isQRValidForSettlement = () => {
+  if (activeTab !== "settlements" || !currentSettlementPerson || (!scannedQRData && qrError !== null)) return false
+
+  if (qrError === "not_found" || qrError === "mismatch") return false
+
+  // Простая проверка: совпадают ли имена и суммы (допустим небольшую погрешность float)
+  // Используем абсолютные значения для сравнения
+  const isSumValid = Math.abs((scannedQRData?.sum || 0) - Math.abs(currentSettlementPerson.amount)) < 0.1
+  const isNameValid = scannedQRData?.recipient === currentSettlementPerson.name
+
+  return isSumValid && !!isNameValid
+}
+
+  const isValid = isQRValidForSettlement()
+
   const handleAcceptQR = () => {
-    if (!scannedQRData) return
-    
-    toast({
-      title: language === "ru" ? "Операция принята" : "Operation accepted",
-      description: `${formatCurrency(scannedQRData.sum)} RUB`,
-    })
-    
+    if (activeTab === "operations") {
+      // Логика для вкладки Операции
+      toast({
+        title: language === "ru" ? "Операция принята" : "Operation accepted",
+        description: `${formatCurrency(scannedQRData?.sum || 0)} RUB`,
+      })
+
+      // Сброс состояния
+      setShowQRResult(false)
+      setScannedQRData(null)
+      setQRError(null)
+      return
+    }
+
+    if (!scannedQRData || qrError !== null) return
+
+    // Если это вкладка Расчеты И QR валиден
+    if (activeTab === "settlements" && currentSettlementPerson && isValid) {
+      const amountToTransfer =
+        currentSettlementPerson.amount < 0 ? Math.abs(currentSettlementPerson.amount) : currentSettlementPerson.amount
+
+      // *** Логика Принятия ЧЕРЕЗ ДИСПЕТЧЕРА после успешного сканирования ***
+      if (currentSettlementPerson.throughDispatcher && currentSettlementPerson.selectedDispatcher) {
+        const dispatcherName =
+          currentSettlementPerson.selectedDispatcher === "dispatcher1"
+            ? language === "ru"
+              ? "Диспетчер Петров"
+              : "Dispatcher Petrov"
+            : language === "ru"
+              ? "Диспетчер Сидоров"
+              : "Dispatcher Sidorov"
+
+        setRecalcResults((prev) => {
+          const existingDispatcher = prev.find((p) => p.name === dispatcherName && p.type === "dispatcher")
+
+          let newRecalcResults = prev.map((p) =>
+            p.id === currentSettlementPerson.id // Помечаем операцию водителя как завершенную
+              ? { ...p, completedAt: new Date(), throughDispatcher: false, selectedDispatcher: "" }
+              : p,
+          )
+
+          if (existingDispatcher) {
+            // Обновляем сумму существующего диспетчера
+            newRecalcResults = newRecalcResults.map((p) =>
+              p.id === existingDispatcher.id ? { ...p, amount: p.amount - amountToTransfer } : p,
+            )
+          } else {
+            // Создаем новую запись для диспетчера
+            const newDispatcherItem: SettlementPerson = {
+              id: Date.now(),
+              name: dispatcherName,
+              amount: -amountToTransfer,
+              type: "dispatcher",
+              throughDispatcher: false,
+            }
+            newRecalcResults = [...newRecalcResults, newDispatcherItem]
+          }
+          return newRecalcResults
+        })
+
+        toast({
+          title: language === "ru" ? "Перенесено на диспетчера" : "Transferred to dispatcher",
+          description: `${dispatcherName}: ${formatCurrency(amountToTransfer)} RUB`,
+        })
+      } else {
+        // Обычное завершение — помечаем существующую запись как выполненную
+        setRecalcResults((prev) =>
+          prev.map((p) =>
+            p.id === currentSettlementPerson.id
+              ? { ...p, completedAt: new Date(), throughDispatcher: false, selectedDispatcher: "" }
+              : p,
+          ),
+        )
+
+        toast({
+          title: language === "ru" ? "Операция принята" : "Operation accepted",
+          description: `${formatCurrency(scannedQRData?.sum || currentSettlementPerson.amount)} RUB`,
+        })
+      }
+    }
+
+    // Сброс состояния
     setShowQRResult(false)
     setScannedQRData(null)
+    setQRError(null)
+    setCurrentSettlementPerson(null)
+    setSettlementAction(null)
   }
 
   const handleRejectQR = () => {
@@ -202,14 +447,41 @@ export default function BalancePage() {
       title: language === "ru" ? "Операция отклонена" : "Operation rejected",
       variant: "destructive",
     })
-    
     setShowQRResult(false)
     setScannedQRData(null)
+    setQRError(null)
+    setCurrentSettlementPerson(null)
+    setSettlementAction(null)
   }
 
   const handleReturnQR = () => {
     setShowQRResult(false)
     setScannedQRData(null)
+    setQRError(null)
+    setCurrentSettlementPerson(null)
+    setSettlementAction(null)
+  }
+
+  const handleCloseGeneratedQR = () => {
+    setShowGeneratedQR(false)
+    setGeneratedQRData(null)
+    setCurrentSettlementPerson(null)
+    setSettlementAction(null)
+    toast({
+      title: language === "ru" ? "QR код закрыт" : "QR code closed",
+    })
+  }
+
+  const handleToggleDispatcher = (personId: number) => {
+    setRecalcResults(
+      recalcResults.map((p) =>
+        p.id === personId ? { ...p, throughDispatcher: !p.throughDispatcher, selectedDispatcher: "" } : p,
+      ),
+    )
+  }
+
+  const handleSelectDispatcher = (personId: number, dispatcherId: string) => {
+    setRecalcResults(recalcResults.map((p) => (p.id === personId ? { ...p, selectedDispatcher: dispatcherId } : p)))
   }
 
   useEffect(() => {
@@ -263,14 +535,14 @@ export default function BalancePage() {
           </div>
         </Card>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "operations" | "settlements")} className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as "operations" | "settlements")}
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="operations">
-              {language === "ru" ? "Операции" : "Operations"}
-            </TabsTrigger>
-            <TabsTrigger value="settlements">
-              {language === "ru" ? "Взаиморасчеты" : "Settlements"}
-            </TabsTrigger>
+            <TabsTrigger value="operations">{language === "ru" ? "Операции" : "Operations"}</TabsTrigger>
+            <TabsTrigger value="settlements">{language === "ru" ? "Расчеты" : "Settlements"}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="operations" className="space-y-4 mt-4">
@@ -292,10 +564,18 @@ export default function BalancePage() {
                   <Button variant="outline" className="w-[120px] justify-between bg-transparent">
                     <span className="text-sm">
                       {paymentFilters.length === 2
-                        ? language === "ru" ? "Все" : "All"
+                        ? language === "ru"
+                          ? "Все"
+                          : "All"
                         : paymentFilters.length === 1
-                          ? paymentFilters[0] === "qr" ? t.qr : language === "ru" ? "ЛС" : "LS"
-                          : language === "ru" ? "Все" : "All"}
+                          ? paymentFilters[0] === "qr"
+                            ? t.qr
+                            : language === "ru"
+                              ? "ЛС"
+                              : "LS"
+                          : language === "ru"
+                            ? "Все"
+                            : "All"}
                     </span>
                     <ChevronDown className="h-4 w-4 opacity-50" />
                   </Button>
@@ -323,41 +603,58 @@ export default function BalancePage() {
               </DropdownMenu>
             </div>
 
-            {/* QR Result Display */}
-            {showQRResult && scannedQRData && (
-              <Card className="p-4 border-2 border-green-500 bg-green-50 dark:bg-green-900/20">
+            {/* Карточка результата сканирования (общая или ошибка) */}
+            {showQRResult === "operations" && (scannedQRData || qrError) && (
+              <Card
+                className={`p-4 border-2 ${qrError ? "border-red-500 bg-red-50 dark:bg-red-900/20" : "border-green-500 bg-green-50 dark:bg-green-900/20"}`}
+              >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-foreground">{t.sumLabel}:</span>
-                    <span className="text-lg font-bold text-green-600">{formatCurrency(scannedQRData.sum)} RUB</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{t.recipientInfo}:</span>
-                    <span className="text-sm font-semibold">{scannedQRData.recipient}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{t.qrCreatedAt}:</span>
-                    <span className="text-sm font-semibold">{scannedQRData.created_at}</span>
-                  </div>
-                  
+                  {qrError === "mismatch" && (
+                    <div className="flex items-center gap-2 text-red-600 font-bold">
+                      <AlertCircle className="h-5 w-5" />
+                      <span>{language === "ru" ? "Несоответствие данных!" : "Data mismatch!"}</span>
+                    </div>
+                  )}
+
+                  {qrError === "not_found" ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-red-600 font-bold">
+                        <AlertCircle className="h-5 w-5" />
+                        <span>{language === "ru" ? "QR не найден" : "QR not found"}</span>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {language === "ru"
+                          ? "Сканируемый QR код не найден в системе."
+                          : "Scanned QR code was not found in the system."}
+                      </div>
+                    </div>
+                  ) : (
+                    scannedQRData && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-foreground">{t.sumLabel}:</span>
+                          <span className={`text-lg font-bold ${qrError ? "text-red-600" : "text-green-600"}`}>
+                            {formatCurrency(scannedQRData.sum)} RUB
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">{t.qrCreatedAt}:</span>
+                          <span className="text-sm font-semibold">{scannedQRData.created_at}</span>
+                        </div>
+                      </>
+                    )
+                  )}
+
                   <div className="flex gap-2 pt-2">
-                    <Button
-                      onClick={handleAcceptQR}
-                      className="flex-1"
-                      variant="default"
-                    >
+                    <Button onClick={handleAcceptQR} className="flex-1" variant="default" disabled={qrError !== null}>
                       {t.accept}
                     </Button>
-                    <Button
-                      onClick={handleRejectQR}
-                      className="flex-1"
-                      variant="destructive"
-                    >
+                    <Button onClick={handleRejectQR} className="flex-1" variant="destructive">
                       {t.reject}
                     </Button>
                     <Button
                       onClick={handleReturnQR}
-                      className="h-10 w-10"
+                      className="h-10 w-10 bg-transparent"
                       variant="outline"
                       size="icon"
                       title={language === "ru" ? "Вернуть" : "Return"}
@@ -369,12 +666,18 @@ export default function BalancePage() {
               </Card>
             )}
 
-            <Button onClick={() => setShowCashQRDialog(true)} className="w-full h-14 text-base font-semibold" variant="default">
-              <QrCode className="mr-2 h-5 w-5" />
-              {t.scanQR}
-            </Button>
+            {showQRResult !== "operations" && (
+              <Button
+                onClick={() => setShowCashQRDialog(true)}
+                className="w-full h-14 text-base font-semibold"
+                variant="default"
+              >
+                <QrCode className="mr-2 h-5 w-5" />
+                {t.scanQR}
+              </Button>
+            )}
 
-            <div className="space-y-3">
+            <div className="space-y-3 mt-3">
               {filteredTransactions.map((transaction) => (
                 <Card
                   key={transaction.id}
@@ -430,79 +733,250 @@ export default function BalancePage() {
 
           <TabsContent value="settlements" className="space-y-4 mt-4">
             <Card className="p-4 border-2 border-border">
-              <Button onClick={() => setShowRecalcPanel(!showRecalcPanel)} variant="outline" className="w-full mb-3 bg-transparent">
-                {language === "ru" ? "Перерасчет" : "Recalculation"}
-                <ChevronDown className={`ml-2 h-4 w-4 transition-transform ${showRecalcPanel ? "rotate-180" : ""}`} />
-              </Button>
+              {/* 1 & 2. Заголовок кнопка и дата перерасчета */}
+              <div className="flex items-center justify-between mb-4">
+                <Button
+                  onClick={handleRecalculate}
+                  variant="outline"
+                  className="font-bold border-2 border-primary/20 hover:border-primary/50 bg-transparent"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {language === "ru" ? "Перерасчет" : "Recalculate"}
+                </Button>
+                {lastRecalcTime && (
+                  <span className="text-xs text-muted-foreground font-mono">{formatDateTime(lastRecalcTime)}</span>
+                )}
+              </div>
 
-              {showRecalcPanel && (
-                <div className="space-y-3">
-                  {recalcResults.map((result) => (
-                    <div key={result.id} className="p-2 border rounded-lg bg-secondary">
-                      <div className="flex items-center justify-between mb-2">
+              {/* Отображаем результат сканирования и для вкладки Settlements (вверху списка) */}
+              {showQRResult === "settlements" && activeTab === "settlements" && (
+                <Card
+                  className={`p-4 mb-4 border-2 ${isValid ? "border-green-500 bg-green-50 dark:bg-green-900/20" : "border-red-500 bg-red-50 dark:bg-red-900/20"}`}
+                >
+                  <div className="space-y-3">
+                    {qrError === "mismatch" && (
+                      <div className="flex items-center gap-2 text-red-600 font-bold">
+                        <AlertCircle className="h-5 w-5" />
+                        <span>{language === "ru" ? "Несоответствие данных!" : "Data mismatch!"}</span>
+                      </div>
+                    )}
+
+                    {qrError === "not_found" ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-red-600 font-bold">
+                          <AlertCircle className="h-5 w-5" />
+                          <span>{language === "ru" ? "QR не найден" : "QR not found"}</span>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {language === "ru"
+                            ? "Сканируемый QR код не найден в системе."
+                            : "Scanned QR code was not found in the system."}
+                        </div>
+                      </div>
+                    ) : (
+                      scannedQRData && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-foreground">{t.sumLabel}:</span>
+                            <span className={`text-lg font-bold ${isValid ? "text-green-600" : "text-red-600"}`}>
+                              {formatCurrency(scannedQRData.sum)} RUB
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">
+                              {language === "ru" ? "В QR коде:" : "In QR code:"}
+                            </span>
+                            <span className="text-sm font-semibold">{scannedQRData.recipient}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">{t.qrCreatedAt}:</span>
+                            <span className="text-sm font-semibold">{scannedQRData.created_at}</span>
+                          </div>
+                        </>
+                      )
+                    )}
+
+                    <div className="flex gap-2 pt-2">
+                      <Button onClick={handleAcceptQR} className="flex-1" variant="default" disabled={!isValid}>
+                        {t.accept}
+                      </Button>
+                      <Button onClick={handleRejectQR} className="flex-1" variant="destructive">
+                        {t.reject}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              <div className="space-y-3">
+                {recalcResults.map((result) => {
+                  // 5. Вид после успешного чтения QR (без кнопок и галок)
+                  if (result.completedAt) {
+                    return (
+                      <div
+                        key={result.id}
+                        className="p-3 border rounded-lg bg-green-50 dark:bg-green-900/10 border-green-200"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-sm">{result.name}</span>
+                          <span className="font-bold text-green-700">{formatCurrency(result.amount)} RUB</span>
+                        </div>
+                        {/* Скрываем дату/время для диспетчеров (НОВЫЙ ПУНКТ 4) */}
+                        {result.type !== "dispatcher" && (
+                          <div className="text-xs text-muted-foreground mt-1 text-right">
+                            {formatDateTime(result.completedAt)}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  // НЕЗАВЕРШЕННЫЕ ОПЕРАЦИИ
+                  const isSettlementNeeded = result.amount !== 0 && result.type === "dispatcher"
+                  const showButtons = result.type === "driver" || isSettlementNeeded
+
+                  return (
+                    <div key={result.id} className="p-3 border rounded-lg bg-secondary">
+                      <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-semibold">{result.name}</span>
-                        <span className="text-sm font-bold">{formatCurrency(result.amount)} RUB</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 mb-2">
-                        <Checkbox
-                          id={`dispatcher-${result.id}`}
-                          checked={recalcThroughDispatcher}
-                          onCheckedChange={(checked) => {
-                            setRecalcThroughDispatcher(checked as boolean)
-                            if (checked) {
-                              setSelectedDispatcher("")
-                            }
-                          }}
-                        />
-                        <label htmlFor={`dispatcher-${result.id}`} className="text-sm">
-                          {language === "ru" ? "Через диспетчера" : "Through dispatcher"}
-                        </label>
+                        <span className={`text-sm font-bold ${result.amount < 0 ? "text-red-500" : "text-green-600"}`}>
+                          {formatCurrency(result.amount)} RUB
+                        </span>
                       </div>
 
-                      {recalcThroughDispatcher && (
-                        <Select value={selectedDispatcher} onValueChange={setSelectedDispatcher}>
-                          <SelectTrigger className="w-full mb-2">
-                            <SelectValue placeholder={language === "ru" ? "Выберите диспетчера" : "Select dispatcher"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="dispatcher1">
-                              {language === "ru" ? "Диспетчер Петров" : "Dispatcher Petrov"}
-                            </SelectItem>
-                            <SelectItem value="dispatcher2">
-                              {language === "ru" ? "Диспетчер Сидоров" : "Dispatcher Sidorov"}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                      {showButtons && (
+                        <div className="flex gap-2 mb-3">
+                          {result.amount < 0 ? (
+                            <Button
+                              onClick={() => handleSettlementAction(result, "debit")}
+                              size="sm"
+                              variant="destructive"
+                              className="w-full"
+                              disabled={
+                                (result.type === "dispatcher" && result.throughDispatcher) ||
+                                (result.throughDispatcher && !result.selectedDispatcher) ||
+                                (result.type === "dispatcher" && showQRResult === "settlements")
+                              }
+                            >
+                              {language === "ru" ? "Списать" : "Debit"}
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={() => handleSettlementAction(result, "credit")}
+                              size="sm"
+                              variant="default"
+                              className="w-full"
+                              disabled={
+                                (result.type === "dispatcher" && result.throughDispatcher) ||
+                                (result.throughDispatcher && !result.selectedDispatcher) ||
+                                (result.type === "dispatcher" && showQRResult === "settlements")
+                              }
+                            >
+                              {language === "ru" ? "Принять" : "Accept"}
+                            </Button>
+                          )}
+                        </div>
                       )}
 
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => handleDebit(result)}
-                          size="sm"
-                          variant="destructive"
-                          className="flex-1"
-                        >
-                          {language === "ru" ? "Списать" : "Debit"}
-                        </Button>
-                        <Button
-                          onClick={() => handleCredit(result)}
-                          size="sm"
-                          variant="default"
-                          className="flex-1"
-                        >
-                          {language === "ru" ? "Принять" : "Accept"}
-                        </Button>
-                      </div>
+                      {/* Чекбокс "Через диспетчера" показываем только для водителей */}
+                      {result.type === "driver" && (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id={`dispatcher-${result.id}`}
+                              checked={result.throughDispatcher}
+                              onCheckedChange={() => handleToggleDispatcher(result.id)}
+                            />
+                            <label htmlFor={`dispatcher-${result.id}`} className="text-sm">
+                              {language === "ru" ? "Через диспетчера" : "Through dispatcher"}
+                            </label>
+                          </div>
+
+                          {result.throughDispatcher && (
+                            <Select
+                              value={result.selectedDispatcher}
+                              onValueChange={(value) => handleSelectDispatcher(result.id, value)}
+                            >
+                              <SelectTrigger className="w-full mt-2">
+                                <SelectValue
+                                  placeholder={language === "ru" ? "Выберите диспетчера" : "Select dispatcher"}
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="dispatcher1">
+                                  {language === "ru" ? "Диспетчер Петров" : "Dispatcher Petrov"}
+                                </SelectItem>
+                                <SelectItem value="dispatcher2">
+                                  {language === "ru" ? "Диспетчер Сидоров" : "Dispatcher Sidorov"}
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )
+                })}
+              </div>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
 
+      {/* Dialog для показа сгенерированного QR при списании */}
+      <Dialog open={showGeneratedQR} onOpenChange={setShowGeneratedQR}>
+        <DialogContent className="sm:max-w-md">
+          <div className="space-y-4">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold mb-2">
+                {language === "ru" ? "QR код для списания" : "QR code for debit"}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {language === "ru"
+                  ? "Покажите этот QR код водителю для списания средств"
+                  : "Show this QR code to the driver to debit funds"}
+              </p>
+            </div>
+
+            {generatedQRData && (
+              <Card className="p-4 bg-secondary">
+                <div className="flex items-center justify-center bg-white dark:bg-gray-900 p-8 rounded-lg border-4 border-primary/20 mb-4">
+                  <div className="w-48 h-48 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg flex items-center justify-center relative">
+                    <QrCode className="h-32 w-32 text-primary" />
+
+                    {/* Corner frames */}
+                    <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary" />
+                    <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary" />
+                    <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary" />
+                    <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{t.sumLabel}:</span>
+                    <span className="font-bold text-lg">{formatCurrency(generatedQRData.sum)} RUB</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{t.recipientInfo}:</span>
+                    <span className="font-semibold">{generatedQRData.recipient}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{t.qrCreatedAt}:</span>
+                    <span className="font-semibold">{generatedQRData.created_at}</span>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            <Button onClick={handleCloseGeneratedQR} className="w-full bg-transparent" variant="outline">
+              {language === "ru" ? "Закрыть" : "Close"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog для сканирования QR (операции и прием при взаиморасчетах) */}
       <CashQRDialog
         open={showCashQRDialog}
         onOpenChange={setShowCashQRDialog}
