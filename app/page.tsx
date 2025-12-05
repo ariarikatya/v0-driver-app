@@ -273,34 +273,50 @@ export default function DriverDashboard() {
   }
 
   const clickStartPrep = () => {
-    if (userStatus !== "confirmed") {
-      console.log("[v0] ui:blocked", { action: "startPrep", reason: "accountUnconfirmed" })
-      toast({
-        title: t.error,
-        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-        variant: "destructive",
-      })
-      return
-    }
-    if (tripStatus !== STATE.PREP_IDLE) {
-      console.error("[v0] Illegal transition: clickStartPrep from", tripStatus)
-      return
-    }
-    setIsGeoTrackerActive(true) // 🟢 ВКЛЮЧАЕМ при "Подготовка рейса"
-    setAreSeatsLocked(false)
-    const newTripId = generateTripId()
-    setTripId(newTripId)
-    setTripStatus(STATE.PREP_TIMER)
-    setPrepareTimer(600)
+  if (userStatus !== "confirmed") {
+    console.log("[v0] ui:blocked", { action: "startPrep", reason: "accountUnconfirmed" })
+    toast({
+      title: t.error,
+      description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+      variant: "destructive",
+    })
+    return
   }
-
+  if (tripStatus !== STATE.PREP_IDLE) {
+    console.error("[v0] Illegal transition: clickStartPrep from", tripStatus)
+    return
+  }
+  // Геотрекер НЕ включаем в PREP_TIMER, включим позже
+  setAreSeatsLocked(false)
+  const newTripId = generateTripId()
+  setTripId(newTripId)
+  setTripStatus(STATE.PREP_TIMER)
+  setPrepareTimer(600)
+}
+const clickCancelPrep = () => {
+  if (tripStatus !== STATE.PREP_TIMER) {
+    console.error("[v0] Illegal transition: clickCancelPrep from", tripStatus)
+    return
+  }
+  setIsGeoTrackerActive(false)
+  setAreSeatsLocked(true)
+  setPrepareTimer(600)
+  setTripId("")
+  setTripStatus(STATE.PREP_IDLE)
+  
+  toast({
+    title: language === "ru" ? "Отменено" : "Cancelled",
+    description: language === "ru" ? "Подготовка рейса отменена" : "Trip preparation cancelled",
+  })
+}
   const clickStartBoarding = () => {
-    if (tripStatus !== STATE.PREP_TIMER) {
-      console.error("[v0] Illegal transition: clickStartBoarding from", tripStatus)
-      return
-    }
-    setTripStatus(STATE.BOARDING)
+  if (tripStatus !== STATE.PREP_TIMER) {
+    console.error("[v0] Illegal transition: clickStartBoarding from", tripStatus)
+    return
   }
+  setIsGeoTrackerActive(true) // 🟢 ВКЛЮЧАЕМ при переходе в BOARDING
+  setTripStatus(STATE.BOARDING)
+}
 
   const clickReadyForRoute = () => {
     if (tripStatus !== STATE.BOARDING) {
@@ -908,7 +924,10 @@ export default function DriverDashboard() {
     const actualOccupied = seats.filter((s) => s.status === "occupied").length
     setManualOccupied(actualOccupied)
   }, [seats])
-
+useEffect(() => {
+  // Блокируем дропдаун с момента начала таймера до завершения рейса
+  setIsRouteDropdownDisabled(tripStatus !== STATE.PREP_IDLE)
+}, [tripStatus])
   const handleScanQueueQR = () => {
     if (areSeatsLocked) {
       console.log("[v0] ui:blocked", {
@@ -1293,71 +1312,82 @@ export default function DriverDashboard() {
         ) : (
           <>
             {/* Рендеринг кнопки "Завершить рейс" (только в IN_ROUTE) */}
-            {tripStatus === STATE.IN_ROUTE && (
-              <div className="flex items-center gap-2 w-full">
-                <Button
-                  onClick={() => {
-                    if (userStatus !== "confirmed") {
-                      console.log("[v0] ui:blocked", { action: "finishTrip", reason: "accountUnconfirmed" })
-                      toast({
-                        title: t.error,
-                        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-                        variant: "destructive",
-                      })
-                      return
-                    }
-                    clickFinish()
-                  }}
-                  className="flex-1" // Добавлено flex-1, чтобы кнопка занимала место рядом с индикатором
-                  size="lg"
-                  variant="destructive"
-                >
-                  {t.finishTrip}
-                </Button>
+{tripStatus === STATE.IN_ROUTE && (
+  <div className="flex items-center gap-2 w-full">
+    <Button
+      onClick={() => {
+        if (userStatus !== "confirmed") {
+          console.log("[v0] ui:blocked", { action: "finishTrip", reason: "accountUnconfirmed" })
+          toast({
+            title: t.error,
+            description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+            variant: "destructive",
+          })
+          return
+        }
+        clickFinish()
+      }}
+      className="flex-1"
+      size="lg"
+      variant="destructive"
+    >
+      {t.finishTrip}
+    </Button>
 
-                {/* Индикатор геотрекера рядом с кнопкой "Завершить рейс" */}
-                <GeoTrackerIndicator isActive={isGeoTrackerActive} language={language} />
-              </div>
-            )}
+    <GeoTrackerIndicator isActive={isGeoTrackerActive} language={language} />
+  </div>
+)}
 
-            {/* Рендеринг кнопок "Подготовка/Посадка/Начать рейс" (во всех остальных статусах) */}
-            {tripStatus !== STATE.IN_ROUTE && (
-              <div className="flex items-center gap-2 w-full">
-                <Button
-                  onClick={() => {
-                    if (userStatus !== "confirmed") {
-                      console.log("[v0] ui:blocked", { action: "tripStatusButton", reason: "accountUnconfirmed" })
-                      toast({
-                        title: t.error,
-                        description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
-                        variant: "destructive",
-                      })
-                      return
-                    }
+{/* Рендеринг кнопок "Подготовка/Посадка/Начать рейс" (во всех остальных статусах) */}
+{tripStatus !== STATE.IN_ROUTE && (
+  <div className="flex items-center gap-2 w-full">
+    <Button
+      onClick={() => {
+        if (userStatus !== "confirmed") {
+          console.log("[v0] ui:blocked", { action: "tripStatusButton", reason: "accountUnconfirmed" })
+          toast({
+            title: t.error,
+            description: language === "ru" ? "Аккаунт не подтвержден" : "Account not confirmed",
+            variant: "destructive",
+          })
+          return
+        }
 
-                    if (tripStatus === STATE.PREP_IDLE && canStartTrip) {
-                      clickStartPrep()
-                    } else if (tripStatus === STATE.PREP_TIMER) {
-                      clickStartBoarding()
-                    } else if (tripStatus === STATE.BOARDING) {
-                      clickReadyForRoute()
-                    } else if (tripStatus === STATE.ROUTE_READY) {
-                      clickStartRoute()
-                    }
-                  }}
-                  disabled={tripStatus === STATE.PREP_IDLE && !canStartTrip}
-                  className="flex-1"
-                  size="lg"
-                >
-                  {getTripButtonText()}
-                </Button>
+        if (tripStatus === STATE.PREP_IDLE && canStartTrip) {
+          clickStartPrep()
+        } else if (tripStatus === STATE.PREP_TIMER) {
+          clickStartBoarding()
+        } else if (tripStatus === STATE.BOARDING) {
+          clickReadyForRoute()
+        } else if (tripStatus === STATE.ROUTE_READY) {
+          clickStartRoute()
+        }
+      }}
+      disabled={tripStatus === STATE.PREP_IDLE && !canStartTrip}
+      className="flex-1"
+      size="lg"
+    >
+      {getTripButtonText()}
+    </Button>
 
-                {/* Индикатор геотрекера рядом с кнопкой "Начать рейс" и т.д. */}
-                {tripStatus !== STATE.PREP_IDLE && (
-                  <GeoTrackerIndicator isActive={isGeoTrackerActive} language={language} />
-                )}
-              </div>
-            )}
+    {/* Кнопка отмены только в PREP_TIMER */}
+    {tripStatus === STATE.PREP_TIMER && (
+      <Button
+        variant="outline"
+        size="lg"
+        onClick={clickCancelPrep}
+        className="whitespace-nowrap"
+      >
+        {language === "ru" ? "Отмена" : "Cancel"}
+      </Button>
+    )}
+
+    {/* Индикатор геотрекера только в BOARDING и ROUTE_READY */}
+    {(tripStatus === STATE.BOARDING || tripStatus === STATE.ROUTE_READY) && (
+      <GeoTrackerIndicator isActive={isGeoTrackerActive} language={language} />
+    )}
+  </div>
+)}
           </>
         )}
       </div>

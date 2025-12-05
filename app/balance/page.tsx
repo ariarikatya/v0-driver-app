@@ -41,7 +41,8 @@ interface SettlementPerson {
   type: "driver" | "dispatcher"
   throughDispatcher?: boolean
   selectedDispatcher?: string
-  completedAt?: Date // Поле для успешного завершения
+  completedAt?: Date
+  dispatcherName?: string // НОВОЕ ПОЛЕ
 }
 
 interface QRScanData {
@@ -95,6 +96,14 @@ export default function BalancePage() {
     { id: 1, name: "Водитель Иванов", amount: 1500, type: "driver", throughDispatcher: false, selectedDispatcher: "" },
     { id: 2, name: "Водитель Смирнов", amount: -500, type: "driver", throughDispatcher: false, selectedDispatcher: "" },
   ])
+  // Вычисляем суммы для принятия и списания
+  const toAccept = recalcResults.filter((r) => !r.completedAt && r.amount > 0).reduce((sum, r) => sum + r.amount, 0)
+
+  const toDebit = recalcResults
+    .filter((r) => !r.completedAt && r.amount < 0)
+    .reduce((sum, r) => sum + Math.abs(r.amount), 0)
+
+  const saldo = toAccept - toDebit
 
   const [lastRecalcTime, setLastRecalcTime] = useState<Date | null>(null) // Дата последнего перерасчета
 
@@ -181,8 +190,14 @@ export default function BalancePage() {
           const existingDispatcher = prev.find((p) => p.name === dispatcherName && p.type === "dispatcher")
 
           let newRecalcResults = prev.map((p) =>
-            p.id === person.id // Помечаем операцию водителя как завершенную
-              ? { ...p, completedAt: new Date(), throughDispatcher: false, selectedDispatcher: "" }
+            p.id === person.id
+              ? {
+                  ...p,
+                  completedAt: new Date(),
+                  throughDispatcher: false,
+                  selectedDispatcher: "",
+                  dispatcherName: dispatcherName,
+                }
               : p,
           )
 
@@ -243,7 +258,13 @@ export default function BalancePage() {
               p.id === existingDispatcher.id
                 ? { ...p, amount: p.amount + person.amount }
                 : p.id === person.id
-                  ? { ...p, completedAt: new Date() }
+                  ? {
+                      ...p,
+                      completedAt: new Date(),
+                      throughDispatcher: false,
+                      selectedDispatcher: "",
+                      dispatcherName: dispatcherName,
+                    } // ДОБАВЛЕНО: dispatcherName
                   : p,
             ),
           )
@@ -256,7 +277,17 @@ export default function BalancePage() {
             throughDispatcher: false,
           }
           setRecalcResults((prev) => [
-            ...prev.map((p) => (p.id === person.id ? { ...p, completedAt: new Date() } : p)),
+            ...prev.map((p) =>
+              p.id === person.id
+                ? {
+                    ...p,
+                    completedAt: new Date(),
+                    throughDispatcher: false,
+                    selectedDispatcher: "",
+                    dispatcherName: dispatcherName,
+                  }
+                : p,
+            ), // ДОБАВЛЕНО: dispatcherName
             newDispatcherItem,
           ])
         }
@@ -276,79 +307,70 @@ export default function BalancePage() {
   }
 
   const handleQRConfirm = () => {
-  if (activeTab === "operations") {
-    // Логика для вкладки Операции (без изменений)
-    const mockQRData: QRScanData = {
-      sum: 450,
-      recipient: language === "ru" ? "Водитель Иванов И.И." : "Driver Ivanov I.",
-      created_at: formatDateTime(new Date()),
-    }
-    setScannedQRData(mockQRData)
-    setQRError(null)
-    setShowQRResult(activeTab)
-    setShowCashQRDialog(false)
-  } else {
-    // Логика для вкладки Расчеты
-    if (!currentSettlementPerson) return
-
-    // ==================================================================
-    // Для тестирования можно переключать эти флаги:
-    // - isSimulateNotFound = true  -> "QR не найден"
-    // - isSimulateError = true     -> "QR найден, но не соответствует"
-    // По умолчанию оба false -> симулируем успешное чтение.
-    // ==================================================================
-    const isSimulateNotFound = false // поставьте true для теста "не найден"
-    const isSimulateError = false // поставьте true для теста "несовпадение"
-
-    if (isSimulateNotFound) {
-      // QR не найден в системе
-      setScannedQRData(null)
-      setQRError("not_found")
-      setShowQRResult("settlements")
-      setShowCashQRDialog(false)
-      return
-    }
-
-    if (isSimulateError) {
-      // QR найден, но данные отличаются (неверная сумма/получатель)
+    if (activeTab === "operations") {
+      // Логика для вкладки Операции
       const mockQRData: QRScanData = {
-        sum: Math.abs(currentSettlementPerson.amount) + 100, // неверная сумма
-        recipient: "Неизвестный Водитель",
+        sum: 450,
+        recipient: language === "ru" ? "Клиент Иванов И.И." : "Client Ivanov I.", // ИЗМЕНЕНО: Клиент вместо Водитель
         created_at: formatDateTime(new Date()),
       }
       setScannedQRData(mockQRData)
-      setQRError("mismatch")
+      setQRError(null)
+      setShowQRResult(activeTab)
+      setShowCashQRDialog(false)
+    } else {
+      // Логика для вкладки Расчеты
+      if (!currentSettlementPerson) return
+
+      const isSimulateNotFound = false
+      const isSimulateError = false
+
+      if (isSimulateNotFound) {
+        setScannedQRData(null)
+        setQRError("not_found")
+        setShowQRResult("settlements")
+        setShowCashQRDialog(false)
+        return
+      }
+
+      if (isSimulateError) {
+        const mockQRData: QRScanData = {
+          sum: Math.abs(currentSettlementPerson.amount) + 100,
+          recipient: "Неизвестный Водитель",
+          created_at: formatDateTime(new Date()),
+        }
+        setScannedQRData(mockQRData)
+        setQRError("mismatch")
+        setShowQRResult("settlements")
+        setShowCashQRDialog(false)
+        return
+      }
+
+      const mockQRData: QRScanData = {
+        sum: Math.abs(currentSettlementPerson.amount),
+        recipient: currentSettlementPerson.name,
+        created_at: formatDateTime(new Date()),
+      }
+
+      setScannedQRData(mockQRData)
+      setQRError(null)
       setShowQRResult("settlements")
       setShowCashQRDialog(false)
-      return
     }
-
-    // По умолчанию — успешное сканирование (данные совпадают)
-    const mockQRData: QRScanData = {
-      sum: Math.abs(currentSettlementPerson.amount),
-      recipient: currentSettlementPerson.name,
-      created_at: formatDateTime(new Date()),
-    }
-
-    setScannedQRData(mockQRData)
-    setQRError(null)
-    setShowQRResult("settlements")
-    setShowCashQRDialog(false)
   }
-}
 
   const isQRValidForSettlement = () => {
-  if (activeTab !== "settlements" || !currentSettlementPerson || (!scannedQRData && qrError !== null)) return false
+    if (activeTab !== "settlements" || !currentSettlementPerson || (!scannedQRData && qrError !== null)) return false
 
-  if (qrError === "not_found" || qrError === "mismatch") return false
+    if (qrError === "not_found" || qrError === "mismatch") return false
 
-  // Простая проверка: совпадают ли имена и суммы (допустим небольшую погрешность float)
-  // Используем абсолютные значения для сравнения
-  const isSumValid = Math.abs((scannedQRData?.sum || 0) - Math.abs(currentSettlementPerson.amount)) < 0.1
-  const isNameValid = scannedQRData?.recipient === currentSettlementPerson.name
+    // Простая проверка: совпадают ли имена и суммы (допустим небольшую погрешность float)
+    // Используем абсолютные значения для сравнения
+    const isSumValid = Math.abs((scannedQRData?.sum || 0) - Math.abs(currentSettlementPerson.amount)) < 0.1
+    const isNameValid = scannedQRData?.recipient === currentSettlementPerson.name
 
-  return isSumValid && !!isNameValid
-}
+    return isSumValid && !!isNameValid
+  }
 
   const isValid = isQRValidForSettlement()
 
@@ -389,8 +411,14 @@ export default function BalancePage() {
           const existingDispatcher = prev.find((p) => p.name === dispatcherName && p.type === "dispatcher")
 
           let newRecalcResults = prev.map((p) =>
-            p.id === currentSettlementPerson.id // Помечаем операцию водителя как завершенную
-              ? { ...p, completedAt: new Date(), throughDispatcher: false, selectedDispatcher: "" }
+            p.id === currentSettlementPerson.id
+              ? {
+                  ...p,
+                  completedAt: new Date(),
+                  throughDispatcher: false,
+                  selectedDispatcher: "",
+                  dispatcherName: dispatcherName,
+                }
               : p,
           )
 
@@ -512,25 +540,36 @@ export default function BalancePage() {
           </div>
           <div className="text-4xl font-bold text-foreground mb-4">{formatCurrency(balance)} RUB</div>
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div className="p-3 rounded-lg bg-background/50">
-              <div className="text-xs text-muted-foreground mb-1">{t.reserved}</div>
-              <div className="text-lg font-semibold text-orange-600">{formatCurrency(0)} RUB</div>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg bg-background/50">
+                <div className="text-xs text-muted-foreground mb-1">{language === "ru" ? "Принять" : "To Accept"}</div>
+                <div className="text-lg font-semibold text-green-600">{formatCurrency(toAccept)} RUB</div>
+              </div>
+              <div className="p-3 rounded-lg bg-background/50">
+                <div className="text-xs text-muted-foreground mb-1">{language === "ru" ? "Списать" : "To Debit"}</div>
+                <div className="text-lg font-semibold text-orange-600">{formatCurrency(toDebit)} RUB</div>
+              </div>
             </div>
-            <div className="p-3 rounded-lg bg-background/50">
-              <div className="text-xs text-muted-foreground mb-1">{t.available}</div>
-              <div className="text-lg font-semibold text-green-600">{formatCurrency(available)} RUB</div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-lg bg-background/50">
-              <div className="text-xs text-muted-foreground mb-1">{t.dailyIncome}</div>
-              <div className="text-base font-semibold text-blue-600">{formatCurrency(3250)} RUB</div>
+            <div className="flex justify-end -mt-2 mb-2 pr-3">
+              <div className="text-[10px] text-muted-foreground">
+                {language === "ru" ? "Сальдо" : "Balance"}:
+                <span className={`ml-1 font-semibold ${saldo >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  {formatCurrency(saldo)}
+                </span>
+              </div>
             </div>
-            <div className="p-3 rounded-lg bg-background/50">
-              <div className="text-xs text-muted-foreground mb-1">{t.weeklyIncome}</div>
-              <div className="text-base font-semibold text-purple-600">{formatCurrency(18700)} RUB</div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg bg-background/50">
+                <div className="text-xs text-muted-foreground mb-1">{t.dailyIncome}</div>
+                <div className="text-base font-semibold text-blue-600">{formatCurrency(3250)} RUB</div>
+              </div>
+              <div className="p-3 rounded-lg bg-background/50">
+                <div className="text-xs text-muted-foreground mb-1">{t.weeklyIncome}</div>
+                <div className="text-base font-semibold text-purple-600">{formatCurrency(18700)} RUB</div>
+              </div>
             </div>
           </div>
         </Card>
@@ -636,6 +675,12 @@ export default function BalancePage() {
                           <span className={`text-lg font-bold ${qrError ? "text-red-600" : "text-green-600"}`}>
                             {formatCurrency(scannedQRData.sum)} RUB
                           </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">
+                            {language === "ru" ? "Клиент:" : "Client:"}
+                          </span>
+                          <span className="text-sm font-semibold">{scannedQRData.recipient}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">{t.qrCreatedAt}:</span>
@@ -821,12 +866,17 @@ export default function BalancePage() {
                           <span className="font-semibold text-sm">{result.name}</span>
                           <span className="font-bold text-green-700">{formatCurrency(result.amount)} RUB</span>
                         </div>
-                        {/* Скрываем дату/время для диспетчеров (НОВЫЙ ПУНКТ 4) */}
-                        {result.type !== "dispatcher" && (
-                          <div className="text-xs text-muted-foreground mt-1 text-right">
+                        {/* Показываем дату/время для всех типов */}
+                        <div className="text-xs text-muted-foreground mt-1 flex items-center justify-between">
+                          {result.type !== "dispatcher" && result.dispatcherName && (
+                            <span>
+                              {language === "ru" ? "Через диспетчера" : "Through dispatcher"} {result.dispatcherName}
+                            </span>
+                          )}
+                          <span className={result.type !== "dispatcher" && result.dispatcherName ? "" : "ml-auto"}>
                             {formatDateTime(result.completedAt)}
-                          </div>
-                        )}
+                          </span>
+                        </div>
                       </div>
                     )
                   }
@@ -940,15 +990,52 @@ export default function BalancePage() {
 
             {generatedQRData && (
               <Card className="p-4 bg-secondary">
-                <div className="flex items-center justify-center bg-white dark:bg-gray-900 p-8 rounded-lg border-4 border-primary/20 mb-4">
-                  <div className="w-48 h-48 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg flex items-center justify-center relative">
-                    <QrCode className="h-32 w-32 text-primary" />
-
-                    {/* Corner frames */}
-                    <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary" />
-                    <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary" />
-                    <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary" />
-                    <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary" />
+                {/* Тестовые кнопки вместо QR */}
+                <div className="flex items-center justify-center p-8 mb-4">
+                  <div className="w-full space-y-3">
+                    <Button
+                      onClick={() => {
+                        // Успешное сканирование
+                        if (currentSettlementPerson) {
+                          setRecalcResults((prev) =>
+                            prev.map((p) =>
+                              p.id === currentSettlementPerson.id
+                                ? { ...p, completedAt: new Date(), throughDispatcher: false, selectedDispatcher: "" }
+                                : p,
+                            ),
+                          )
+                          toast({
+                            title: language === "ru" ? "Операция выполнена" : "Operation completed",
+                            description: `${formatCurrency(generatedQRData.sum)} RUB`,
+                          })
+                        }
+                        setShowGeneratedQR(false)
+                        setGeneratedQRData(null)
+                        setCurrentSettlementPerson(null)
+                        setSettlementAction(null)
+                      }}
+                      variant="default"
+                      className="w-full h-24 text-lg font-semibold"
+                    >
+                      {language === "ru" ? "ОК - Успешно" : "OK - Success"}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        // Неудачное сканирование
+                        toast({
+                          title: language === "ru" ? "Операция отклонена" : "Operation rejected",
+                          variant: "destructive",
+                        })
+                        setShowGeneratedQR(false)
+                        setGeneratedQRData(null)
+                        setCurrentSettlementPerson(null)
+                        setSettlementAction(null)
+                      }}
+                      variant="destructive"
+                      className="w-full h-24 text-lg font-semibold"
+                    >
+                      {language === "ru" ? "НЕ ОК - Ошибка" : "NOT OK - Error"}
+                    </Button>
                   </div>
                 </div>
 
@@ -968,10 +1055,6 @@ export default function BalancePage() {
                 </div>
               </Card>
             )}
-
-            <Button onClick={handleCloseGeneratedQR} className="w-full bg-transparent" variant="outline">
-              {language === "ru" ? "Закрыть" : "Close"}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
