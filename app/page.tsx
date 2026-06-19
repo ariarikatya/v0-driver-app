@@ -1397,29 +1397,31 @@ useEffect(() => {
           <Card className={`p-4 border-2 border-border ${isPanelsDisabled ? "opacity-50 pointer-events-none" : ""}`}>
             <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
             <div className="grid grid-cols-4 gap-3">
-              <div className="text-center p-4 rounded-lg bg-secondary">
-  <div className="flex items-center justify-center gap-1 mb-2 border border-border rounded-md bg-background/50 px-1.5 py-1 mx-auto w-fit">
+              <div className="text-center p-2 sm:p-4 rounded-lg bg-secondary min-w-0">
+  <div className="flex items-center justify-center gap-0.5 mb-2 min-w-0">
     <Button
       size="icon"
       variant="outline"
-      className="h-7 w-7 bg-transparent shrink-0"
+      className="h-6 w-6 sm:h-7 sm:w-7 bg-transparent shrink-0 p-0"
       onClick={() => setManualOccupied(Math.max(0, manualOccupied - 1))}
       disabled={manualOccupied === 0 || isPanelsDisabled}
     >
       <Minus className="h-3 w-3" />
     </Button>
-    <div className="text-2xl font-bold text-primary w-8 text-center">{occupiedCount}</div>
+    <div className="text-xl sm:text-2xl font-bold text-primary w-6 text-center shrink-0">
+      {occupiedCount}
+    </div>
     <Button
       size="icon"
       variant="outline"
-      className="h-7 w-7 bg-transparent shrink-0"
+      className="h-6 w-6 sm:h-7 sm:w-7 bg-transparent shrink-0 p-0"
       onClick={() => setManualOccupied(Math.min(6, manualOccupied + 1))}
       disabled={manualOccupied === 6 || isPanelsDisabled}
     >
       <Plus className="h-3 w-3" />
     </Button>
   </div>
-  <div className="text-xs text-muted-foreground">{t.occupied}</div>
+  <div className="text-[10px] sm:text-xs text-muted-foreground">{t.occupied}</div>
 </div>
               <div className="text-center p-4 rounded-lg bg-secondary">
                 <div className="text-2xl font-bold text-blue-600">
