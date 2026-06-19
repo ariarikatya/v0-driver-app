@@ -1398,29 +1398,29 @@ useEffect(() => {
             <h2 className="text-lg font-bold text-foreground mb-4">{t.seats}</h2>
             <div className="grid grid-cols-4 gap-3">
               <div className="text-center p-4 rounded-lg bg-secondary">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-7 w-7 bg-transparent"
-                    onClick={() => setManualOccupied(Math.max(0, manualOccupied - 1))}
-                    disabled={manualOccupied === 0 || isPanelsDisabled}
-                  >
-                    <Minus className="h-3 w-3" />
-                  </Button>
-                  <div className="text-2xl font-bold text-primary">{occupiedCount}</div>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-7 w-7 bg-transparent"
-                    onClick={() => setManualOccupied(Math.min(6, manualOccupied + 1))}
-                    disabled={manualOccupied === 6 || isPanelsDisabled}
-                  >
-                    <Plus className="h-3 w-3" />
-                  </Button>
-                </div>
-                <div className="text-xs text-muted-foreground">{t.occupied}</div>
-              </div>
+  <div className="flex items-center justify-center gap-1 mb-2 border border-border rounded-md bg-background/50 px-1.5 py-1 mx-auto w-fit">
+    <Button
+      size="icon"
+      variant="outline"
+      className="h-7 w-7 bg-transparent shrink-0"
+      onClick={() => setManualOccupied(Math.max(0, manualOccupied - 1))}
+      disabled={manualOccupied === 0 || isPanelsDisabled}
+    >
+      <Minus className="h-3 w-3" />
+    </Button>
+    <div className="text-2xl font-bold text-primary w-8 text-center">{occupiedCount}</div>
+    <Button
+      size="icon"
+      variant="outline"
+      className="h-7 w-7 bg-transparent shrink-0"
+      onClick={() => setManualOccupied(Math.min(6, manualOccupied + 1))}
+      disabled={manualOccupied === 6 || isPanelsDisabled}
+    >
+      <Plus className="h-3 w-3" />
+    </Button>
+  </div>
+  <div className="text-xs text-muted-foreground">{t.occupied}</div>
+</div>
               <div className="text-center p-4 rounded-lg bg-secondary">
                 <div className="text-2xl font-bold text-blue-600">
                   {acceptedBookingsCount}:{pendingBookingsCount}
